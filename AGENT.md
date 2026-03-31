@@ -34,3 +34,9 @@ This document outlines the primary development standards and best practices esta
 *   **Rule:** Avoid hardcoded absolute file paths.
 *   **Reasoning:** The application should function universally regardless of what directory the user's terminal is currently inside, or what local machine they are targeting.
 *   **Best Practice:** Always derive file paths dynamically related to the current script file using `os.path.dirname(os.path.abspath(__file__))`.
+
+## 6. Git Commit Messages
+
+*   **Rule:** Use **Conventional Commits** formatting for all generated commit messages.
+*   **Reasoning:** Standardizing commit messages helps maintain a clean, readable summary of codebase evolution and clarifies the intent of each change.
+*   **Best Practice:** Always prefix the commit message with an appropriate type tag, such as `feat:` (new feature), `fix:` (bug fix), `refactor:` (code restructuring), `docs:` (documentation), or `chore:` (routine tasks). Example: `feat: add new user instructions`.
