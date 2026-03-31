@@ -1,0 +1,71 @@
+FINISH 
+!Close Previous task (! is comment)
+/Clear,NOSTART
+/FILNAME,LAB3_inclass Practice
+/TITLE,LAB3_inclass Practice
+! Unit: m, N, Pa
+
+! Start of preprocessing
+/PREP7
+L=100
+W=2
+H=2
+P=-1000
+incc=1e-6
+!Define the parameters
+
+MP,EX,1,200e9
+MP,NUXY,1,0.3
+!Define the Material Properties
+
+ET,1,SOLID 186
+!Choose the element method
+
+BLOCK,0,L,0,H,0,W
+!Define the geometry
+
+ALLSEL,ALL
+LSEL,S,LOC,X,incc,L-incc
+LESIZE,ALL,,,200
+ALLSEL,ALL
+
+LSEL,S,LOC,Y,incc,H-incc
+LESIZE,ALL,,,10
+ALLSEL,ALL
+
+LSEL,S,LOC,Z,incc,W-incc
+LESIZE,ALL,,,10
+ALLSEL,ALL
+
+VATT,1,,1
+VMESH,ALL
+ALLSEL,ALL
+
+NSEL,S,LOC,X,-incc,incc
+D,ALL,UX,0
+D,ALL,UY,0
+D,ALL,UZ,0
+ALLSEL,ALL
+
+NSEL,S,LOC,X,L-incc,L+incc
+NSEL,R,LOC,Y,H-incc,H+incc
+NSEL,R,LOC,Z,W/2-incc,W/2+incc
+F,ALL,FY,P
+ALLSEL,ALL
+
+/SOLU
+ANTYPE,0
+SOLVE
+FINISH
+
+/POST1
+SET,LAST
+
+NSEL,S,LOC,X,L-incc,L+incc
+NSEL,R,LOC,Y,H-incc,H+incc
+NSEL,R,LOC,Z,W/2-incc,W/2+incc
+F,ALL,FY,P
+PRNSOL,U,COMP
+ALLSEL,ALL
+
+PLDISP,2

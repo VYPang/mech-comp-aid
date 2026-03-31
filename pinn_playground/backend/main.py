@@ -1,0 +1,93 @@
+"""FastAPI application entry point for PINN Playground."""
+
+from __future__ import annotations
+
+import asyncio
+from contextlib import suppress
+from pathlib import Path
+
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi.staticfiles import StaticFiles
+
+from pinn_playground.backend.training import (
+    TrainingConfig,
+    build_preview_payload,
+    stream_training_session,
+)
+
+# API routes must be registered before the catch-all static mount on "/".
+app = FastAPI(
+    title="PINN Playground",
+    description="Educational API for Physics-Informed Neural Networks (PINNs).",
+    version="0.1.0",
+)
+
+
+@app.get("/health")
+def health() -> dict[str, str]:
+    """Liveness check for load balancers and local dev."""
+    return {"status": "ok"}
+
+
+@app.post("/api/preview-points")
+def preview_points(config: TrainingConfig) -> dict[str, object]:
+    """Return plot-friendly collocation and boundary points for the current UI state."""
+    return build_preview_payload(config)
+
+
+@app.websocket("/ws/train")
+async def websocket_train(websocket: WebSocket) -> None:
+    """Accept one training session per websocket connection."""
+    await websocket.accept()
+    cancel_event = asyncio.Event()
+    training_task: asyncio.Task[None] | None = None
+
+    try:
+        while True:
+            message = await websocket.receive_json()
+            message_type = message.get("type", "start")
+
+            if message_type == "start":
+                if training_task and not training_task.done():
+                    await websocket.send_json(
+                        {
+                            "type": "error",
+                            "message": "Training is already running for this connection.",
+                        }
+                    )
+                    continue
+                cancel_event = asyncio.Event()
+                payload = message.get("payload", message)
+                config = TrainingConfig.model_validate(payload)
+                training_task = asyncio.create_task(
+                    stream_training_session(websocket, config, cancel_event)
+                )
+                continue
+
+            if message_type == "stop":
+                cancel_event.set()
+                if training_task:
+                    with suppress(Exception):
+                        await training_task
+                return
+
+            await websocket.send_json(
+                {
+                    "type": "error",
+                    "message": "Unsupported websocket message. Use 'start' or 'stop'.",
+                }
+            )
+    except WebSocketDisconnect:
+        cancel_event.set()
+        if training_task:
+            with suppress(Exception):
+                await training_task
+
+
+_frontend_dir = Path(__file__).resolve().parent.parent / "frontend"
+if _frontend_dir.is_dir():
+    app.mount(
+        "/",
+        StaticFiles(directory=str(_frontend_dir), html=True),
+        name="frontend",
+    )
