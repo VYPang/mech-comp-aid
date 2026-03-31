@@ -4,6 +4,7 @@
 1. [Prerequisites & Installation](#1-prerequisites--installation)
 2. [Exercise 1-1: Visualization, Rotation and Area](#2-exercise-1-1-visualization-rotation-and-area)
 3. [Exercise 1-2: Program Periodic Surfaces](#3-exercise-1-2-program-periodic-surfaces)
+4. [Exercise 1-3: Implicit Surfaces and Metamorphosis](#4-exercise-1-3-implicit-surfaces-and-metamorphosis)
 
 ---
 
@@ -168,4 +169,54 @@ python project1/exercise1-2/periodic_surfaces.py plot D
 
 # Plot a concentrated Gyroid surface block with finer resolution (80x80x80 bounded between [-2.0, 2.0])
 python project1/exercise1-2/periodic_surfaces.py plot G --min -2.0 --max 2.0 --res 80
+```
+
+---
+
+## 4. Exercise 1-3: Implicit Surfaces and Metamorphosis
+
+This module provides tools to construct, combine, and morph implicit 3D geometries. It uses scalar fields ($F(x,y,z) = 0$) and extracts polygonal meshes using the Marching Cubes algorithm for visualization via PyVista. The CLI provides commands corresponding to three primary tasks.
+
+### CLI Usage
+
+A `typer`-based CLI structure is provided to easily visualize the problems. Run `python project1/exercise1-3/implicit.py --help` for available commands.
+
+#### A. Vizualise a Sphere (Problem 1)
+
+Visualizes an implicitly defined sphere centered at $(0,0,0)$ with a radius of $1$.
+
+**Syntax & Example:**
+```bash
+python project1/exercise1-3/implicit.py sphere
+```
+
+#### B. Boolean Union (Problem 2)
+
+Visualizes the boolean union of two implicit geometries: a $1 \times 1 \times 1$ box and a cylinder aligned along the Z-axis. You can compute this union using standard Min/Max operations or an R-function.
+
+**Options:**
+*   `--method`: Compute using `minmax` (standard boolean logic) or `rfunc` (smooth representation blending via R-function approximation). Default is `minmax`.
+*   `--alpha`: Adjust the blending smoothness parameter when using R-functions. Default is `0.5`.
+
+**Examples:**
+```bash
+# Compute union using min/max logic
+python project1/exercise1-3/implicit.py union
+# or
+python project1/exercise1-3/implicit.py union --method minmax
+
+# Compute union using R-functions
+python project1/exercise1-3/implicit.py union --method rfunc
+
+# Compute union using R-functions with a custom alpha blending metric
+python project1/exercise1-3/implicit.py union --method rfunc --alpha 0.8
+```
+
+#### C. Metamorphosis (Problem 3)
+
+Generates and visualizes a sequence of blending transformations (metamorphosis) between a sphere and the box-cylinder union over 11 steps ($\mu \in [0, 1]$). Each step is visualized sequentially; simply close the window to advance to the next step.
+
+**Syntax & Example:**
+```bash
+python project1/exercise1-3/implicit.py metamorphose
 ```
