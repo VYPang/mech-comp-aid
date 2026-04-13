@@ -9,6 +9,9 @@ from pathlib import Path
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.staticfiles import StaticFiles
 
+from pinn_playground.backend.fem_geometry import build_fem_preview_payload
+from pinn_playground.backend.fem_solver import solve_fem_problem
+from pinn_playground.backend.problem_definition import FEMProblemConfig
 from pinn_playground.backend.training import (
     TrainingConfig,
     build_preview_payload,
@@ -33,6 +36,18 @@ def health() -> dict[str, str]:
 def preview_points(config: TrainingConfig) -> dict[str, object]:
     """Return plot-friendly collocation and boundary points for the current UI state."""
     return build_preview_payload(config)
+
+
+@app.post("/api/fem/preview")
+def fem_preview(config: FEMProblemConfig) -> dict[str, object]:
+    """Return mesh and boundary-preview data for the numerical-method playground."""
+    return build_fem_preview_payload(config)
+
+
+@app.post("/api/fem/solve")
+def fem_solve(config: FEMProblemConfig) -> dict[str, object]:
+    """Run a static FEM solve and return deformed-mesh and stress results."""
+    return solve_fem_problem(config)
 
 
 @app.websocket("/ws/train")
