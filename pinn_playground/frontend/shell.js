@@ -1,7 +1,7 @@
-import { canAdvanceCheckpoint, getCompletionMessage } from "./checkpoint-rules.js";
-import { createNumericalCell } from "./numerical-cell.js";
-import { createPinnCell } from "./pinn-cell.js";
-import { initializeShellPlots } from "./plots.js";
+import { canAdvanceCheckpoint, getCompletionMessage } from "./checkpoint-rules.js?v=checkpoint-shell-5";
+import { createNumericalCell } from "./numerical-cell.js?v=checkpoint-shell-5";
+import { createPinnCell } from "./pinn-cell.js?v=checkpoint-shell-5";
+import { initializeShellPlots } from "./plots.js?v=checkpoint-shell-5";
 
 export function createAppShell({ ui, progressStore }) {
   const runtimeState = {
@@ -9,13 +9,26 @@ export function createAppShell({ ui, progressStore }) {
     fem: {},
     pinn: {},
   };
+  const initialActiveCell = progressStore.getActiveCheckpoint()?.cellId ?? "numerical";
+  const groupCollapsed = {
+    numerical: window.matchMedia("(max-width: 1279px)").matches ? initialActiveCell !== "numerical" : false,
+    pinn: window.matchMedia("(max-width: 1279px)").matches ? initialActiveCell !== "pinn" : false,
+  };
+  let lastActiveCell = initialActiveCell;
 
   const shellHelpers = {
     setGuide(html) {
       ui.guideBox.innerHTML = html;
     },
-    setStatus(text) {
+    setGuideSections(sections) {
+      ui.guideBox.innerHTML = renderGuideSections(sections);
+    },
+    setStatus(text, options = {}) {
+      const tone = options.tone ?? "idle";
       ui.statusText.textContent = text;
+      ui.statusDetail.textContent = options.detail ?? "Preview, solve, and training feedback will appear here.";
+      ui.statusPill.textContent = options.pill ?? statusPillLabel(tone);
+      ui.statusPill.className = `status-pill ${statusPillClass(tone)}`;
     },
     setControlsSummary(text) {
       ui.controlsSummary.textContent = text;
@@ -84,6 +97,11 @@ export function createAppShell({ ui, progressStore }) {
       return;
     }
 
+    if (checkpoint.cellId !== lastActiveCell) {
+      groupCollapsed[checkpoint.cellId] = false;
+      lastActiveCell = checkpoint.cellId;
+    }
+
     refreshChrome(state, checkpoint);
 
     if (mountedCheckpointId) {
@@ -112,6 +130,7 @@ export function createAppShell({ ui, progressStore }) {
   function renderLearningPath(state, activeCheckpointId) {
     ui.learningPath.innerHTML = progressStore.checkpointGroups
       .map((group) => {
+        const completedCount = group.checkpoints.filter((entry) => state.checkpoints[entry.id]?.completed).length;
         const steps = group.checkpoints
           .map((checkpoint) => {
             const checkpointState = state.checkpoints[checkpoint.id];
@@ -140,13 +159,11 @@ export function createAppShell({ ui, progressStore }) {
                 data-checkpoint-id="${checkpoint.id}"
                 ${checkpointState.unlocked ? "" : "disabled"}
               >
-                <div class="flex items-start justify-between gap-3">
-                  <div>
-                    <div class="text-sm font-semibold text-slate-100">${checkpoint.title}</div>
-                    <div class="mt-1 text-xs leading-5 text-slate-400">${checkpoint.subtitle}</div>
-                  </div>
+                <div class="path-step-header">
+                  <div class="path-step-title">${checkpoint.title}</div>
                   <span class="path-step-status ${statusClass}">${statusLabel}</span>
                 </div>
+                <div class="path-step-subtitle">${checkpoint.subtitle}</div>
               </button>
             `;
           })
@@ -154,9 +171,26 @@ export function createAppShell({ ui, progressStore }) {
 
         return `
           <section class="path-group">
-            <h3 class="text-sm font-semibold uppercase tracking-[0.18em] text-slate-200">${group.title}</h3>
-            <p class="mt-2 text-sm leading-6 text-slate-400">${group.description}</p>
-            <div class="mt-4 space-y-3">${steps}</div>
+            <div class="path-group-header">
+              <div class="path-group-meta">
+                <div class="path-group-title-row">
+                  <h3 class="text-sm font-semibold uppercase tracking-[0.18em] text-slate-200">${group.title}</h3>
+                  <button
+                    type="button"
+                    class="path-group-toggle ${groupCollapsed[group.id] ? "path-group-toggle-collapsed" : ""}"
+                    data-group-toggle="${group.id}"
+                    aria-expanded="${String(!groupCollapsed[group.id])}"
+                    aria-controls="path-group-body-${group.id}"
+                    title="${groupCollapsed[group.id] ? "Expand section" : "Collapse section"}"
+                  >
+                    <span class="path-group-toggle-icon">▼</span>
+                  </button>
+                </div>
+                <div class="path-group-progress">${completedCount}/${group.checkpoints.length} complete</div>
+                <p class="mt-2 text-sm leading-6 text-slate-400">${group.description}</p>
+              </div>
+            </div>
+            <div id="path-group-body-${group.id}" class="mt-4 space-y-3 ${groupCollapsed[group.id] ? "path-group-body-collapsed" : ""}">${steps}</div>
           </section>
         `;
       })
@@ -167,14 +201,25 @@ export function createAppShell({ ui, progressStore }) {
         progressStore.activateCheckpoint(button.dataset.checkpointId);
       });
     });
+
+    ui.learningPath.querySelectorAll("[data-group-toggle]").forEach((button) => {
+      button.addEventListener("click", () => {
+        const groupId = button.dataset.groupToggle;
+        groupCollapsed[groupId] = !groupCollapsed[groupId];
+        refreshChrome();
+      });
+    });
   }
 
   function renderWorkspaceHeader(checkpoint, state) {
     const checkpointState = state.checkpoints[checkpoint.id];
     const group = progressStore.checkpointGroups.find((entry) => entry.id === checkpoint.cellId);
+    const absoluteIndex = progressStore.orderedCheckpointIds.indexOf(checkpoint.id) + 1;
+    const groupIndex = group?.checkpoints.findIndex((entry) => entry.id === checkpoint.id) ?? 0;
     ui.workspaceCellLabel.textContent = group?.title ?? "Learning Cell";
     ui.workspaceTitle.textContent = checkpoint.title;
     ui.workspaceSubtitle.textContent = checkpoint.subtitle;
+    ui.workspaceProgress.textContent = `Step ${absoluteIndex} of ${progressStore.orderedCheckpointIds.length} \u00b7 ${group?.title ?? "Learning Cell"} ${groupIndex + 1} of ${group?.checkpoints.length ?? 1}`;
     ui.controlsTitle.textContent = checkpoint.controlsTitle;
     ui.controlsSubtitle.textContent = checkpoint.controlsSubtitle;
     ui.coachSubtitle.textContent = getCompletionMessage(checkpoint, runtimeState);
@@ -210,8 +255,68 @@ export function createAppShell({ ui, progressStore }) {
     ui.nextStepButton.textContent =
       isCompleted && isFinal
         ? "Learning path completed"
+        : !canAdvance && checkpoint.completeMode === "api_success"
+          ? "Complete the required run first"
         : isFinal
           ? "Mark learning path complete"
           : "Mark complete and continue";
   }
+}
+
+function statusPillClass(tone) {
+  switch (tone) {
+    case "preview":
+      return "status-pill-preview";
+    case "running":
+      return "status-pill-running";
+    case "success":
+      return "status-pill-success";
+    case "warning":
+      return "status-pill-warning";
+    case "error":
+      return "status-pill-error";
+    default:
+      return "status-pill-idle";
+  }
+}
+
+function statusPillLabel(tone) {
+  switch (tone) {
+    case "preview":
+      return "Previewing";
+    case "running":
+      return "Running";
+    case "success":
+      return "Ready";
+    case "warning":
+      return "Stale";
+    case "error":
+      return "Error";
+    default:
+      return "Idle";
+  }
+}
+
+function renderGuideSections(sections) {
+  const validSections = sections.filter((section) => Array.isArray(section.items) && section.items.length > 0);
+  if (!validSections.length) {
+    return "<p>Guidance for the active checkpoint appears here.</p>";
+  }
+
+  return `
+    <div class="guide-stack">
+      ${validSections
+        .map(
+          (section) => `
+            <section class="guide-section">
+              <p class="guide-section-title">${section.title}</p>
+              <ul class="guide-section-list">
+                ${section.items.map((item) => `<li>${item}</li>`).join("")}
+              </ul>
+            </section>
+          `,
+        )
+        .join("")}
+    </div>
+  `;
 }

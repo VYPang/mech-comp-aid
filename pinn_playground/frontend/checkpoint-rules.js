@@ -25,15 +25,15 @@ export function canAdvanceCheckpoint(checkpoint, progressState, runtimeState) {
 export function getCompletionMessage(checkpoint, runtimeState) {
   switch (checkpoint.completeMode) {
     case COMPLETE_MODES.MANUAL:
-      return "Manual progression is enabled for this checkpoint.";
+      return "Review the step, then continue when you are ready.";
     case COMPLETE_MODES.API_SUCCESS:
       return runtimeState.checkpointEvents[checkpoint.id]?.status === "success"
-        ? "The required solver action has succeeded."
-        : "This checkpoint will unlock when the required solver action succeeds.";
+        ? "Required run complete. You can continue."
+        : "Run the required solve to unlock the next step.";
     case COMPLETE_MODES.RULE:
-      return "This checkpoint is reserved for rule-based completion in a future milestone.";
+      return "This checkpoint will use rule-based completion in a later milestone.";
     default:
-      return "Completion mode is not recognized.";
+      return "Completion state is unavailable.";
   }
 }
 

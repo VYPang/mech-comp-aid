@@ -1,5 +1,5 @@
-import { fetchFemPreview, fetchFemSolve } from "./api.js";
-import { renderFemBoundaryPlot, renderFemDeformedPlot, renderFemMeshPlot, renderNotePlot, renderStressHeatmap } from "./plots.js";
+import { fetchFemPreview, fetchFemSolve } from "./api.js?v=checkpoint-shell-5";
+import { renderFemBoundaryPlot, renderFemDeformedPlot, renderFemMeshPlot, renderNotePlot, renderStressHeatmap } from "./plots.js?v=checkpoint-shell-5";
 
 export function createNumericalCell({ ui, runtimeState, shell }) {
   const state = {
@@ -7,6 +7,7 @@ export function createNumericalCell({ ui, runtimeState, shell }) {
     previewTimer: null,
     latestPreview: null,
     latestSolve: null,
+    isPreviewing: false,
     isSolving: false,
     controls: null,
   };
@@ -33,69 +34,77 @@ export function createNumericalCell({ ui, runtimeState, shell }) {
     ui.controlsForm.innerHTML = `
       <details class="toggle-panel" open>
         <summary>Geometry and Mesh</summary>
-        <div class="mt-4 grid gap-4 lg:grid-cols-2">
-          <div>
+        <div class="control-section-grid mt-4 lg:grid-cols-2">
+          <div class="control-card">
             <label for="fem-geometry" class="field-label">Geometry</label>
             <select id="fem-geometry" class="field-input">
               <option value="base">Base Frame</option>
               <option value="diagonal">Single Diagonal</option>
               <option value="x_brace">X-Brace</option>
             </select>
+            <p class="field-help">Pick the frame layout you want to inspect before solving.</p>
           </div>
-          <div>
-            <div class="mb-1 flex items-center justify-between text-sm">
-              <label for="fem-n-cells" class="font-medium text-slate-200">Structured Cells per Side</label>
-              <span id="fem-n-cells-value" class="text-cyan-300">40</span>
+          <div class="control-card">
+            <div class="range-row">
+              <label for="fem-n-cells">Structured Cells per Side</label>
+              <span id="fem-n-cells-value" class="range-value">40</span>
             </div>
             <input id="fem-n-cells" type="range" min="12" max="80" step="2" value="40" class="field-range" />
+            <p class="field-help">More cells resolve corners and load transfer more clearly.</p>
           </div>
-          <div>
-            <div class="mb-1 flex items-center justify-between text-sm">
-              <label for="fem-frame-thickness" class="font-medium text-slate-200">Frame Thickness</label>
-              <span id="fem-frame-thickness-value" class="text-cyan-300">0.18</span>
+          <div class="control-card">
+            <div class="range-row">
+              <label for="fem-frame-thickness">Frame Thickness</label>
+              <span id="fem-frame-thickness-value" class="range-value">0.18</span>
             </div>
             <input id="fem-frame-thickness" type="range" min="0.10" max="0.32" step="0.01" value="0.18" class="field-range" />
+            <p class="field-help">A thinner frame makes reinforcement effects easier to see.</p>
           </div>
-          <div>
-            <div class="mb-1 flex items-center justify-between text-sm">
-              <label for="fem-brace-half-width" class="font-medium text-slate-200">Brace Half Width</label>
-              <span id="fem-brace-half-width-value" class="text-cyan-300">0.018</span>
+          <div class="control-card">
+            <div class="range-row">
+              <label for="fem-brace-half-width">Brace Half Width</label>
+              <span id="fem-brace-half-width-value" class="range-value">0.018</span>
             </div>
             <input id="fem-brace-half-width" type="range" min="0.006" max="0.05" step="0.002" value="0.018" class="field-range" />
+            <p class="field-help">Brace width only matters for the reinforced geometries.</p>
           </div>
         </div>
       </details>
 
       <details class="toggle-panel" open>
         <summary>Top Load Patch</summary>
-        <div class="mt-4 grid gap-4 lg:grid-cols-2">
-          <div>
-            <div class="mb-1 flex items-center justify-between text-sm">
-              <label for="fem-patch-center" class="font-medium text-slate-200">Patch Center (x)</label>
-              <span id="fem-patch-center-value" class="text-cyan-300">0.50</span>
+        <div class="control-section-grid mt-4 lg:grid-cols-2">
+          <div class="control-card">
+            <div class="range-row">
+              <label for="fem-patch-center">Patch Center (x)</label>
+              <span id="fem-patch-center-value" class="range-value">0.50</span>
             </div>
             <input id="fem-patch-center" type="range" min="0.15" max="0.85" step="0.01" value="0.50" class="field-range" />
+            <p class="field-help">Slide the applied traction left or right along the top edge.</p>
           </div>
-          <div>
-            <div class="mb-1 flex items-center justify-between text-sm">
-              <label for="fem-patch-width" class="font-medium text-slate-200">Patch Width</label>
-              <span id="fem-patch-width-value" class="text-cyan-300">0.20</span>
+          <div class="control-card">
+            <div class="range-row">
+              <label for="fem-patch-width">Patch Width</label>
+              <span id="fem-patch-width-value" class="range-value">0.20</span>
             </div>
             <input id="fem-patch-width" type="range" min="0.04" max="0.45" step="0.01" value="0.20" class="field-range" />
+            <p class="field-help">A narrower patch creates a more localized response.</p>
           </div>
         </div>
       </details>
 
       <details class="toggle-panel">
         <summary>Material Defaults</summary>
-        <div class="mt-4 grid gap-4 lg:grid-cols-2">
-          <div>
+        <div class="control-section-grid mt-4 lg:grid-cols-2">
+          <div class="control-card">
             <label for="fem-young" class="field-label">Young's Modulus</label>
             <input id="fem-young" type="number" value="210000000000" step="1000000000" class="field-input" />
+            <p class="field-help">Default steel stiffness for the teaching baseline.</p>
           </div>
-          <div>
+          <div class="control-card">
             <label for="fem-poisson" class="field-label">Poisson Ratio</label>
             <input id="fem-poisson" type="number" value="0.3" step="0.01" class="field-input" />
+            <p class="field-help">Lateral contraction ratio used during the solve.</p>
           </div>
         </div>
       </details>
@@ -106,8 +115,8 @@ export function createNumericalCell({ ui, runtimeState, shell }) {
             <details class="toggle-panel" open>
               <summary>Run FEM Solve</summary>
               <div class="mt-4 space-y-4">
-                <div class="rounded-xl border border-slate-700 bg-slate-950/60 px-4 py-3 text-sm leading-6 text-slate-300">
-                  Use the current geometry, mesh, and top-edge traction patch to solve the static plane-stress problem.
+                <div class="control-card text-sm leading-6 text-slate-300">
+                  Use the current setup to solve one static plane-stress case and compare deformation against von Mises stress.
                 </div>
                 <button id="fem-solve-button" type="button" class="w-full rounded-xl bg-cyan-500 px-4 py-3 font-semibold text-slate-950 transition hover:bg-cyan-400">
                   Run FEM Solve
@@ -138,24 +147,25 @@ export function createNumericalCell({ ui, runtimeState, shell }) {
 
     updateValueLabels();
 
-    Object.values(state.controls).forEach((control) => {
-      if (!control) {
-        return;
-      }
-      const eventName = control.tagName === "SELECT" ? "change" : "input";
-      control.addEventListener(eventName, () => {
-        updateValueLabels();
-        invalidateSolveResult();
-        schedulePreview();
-      });
-      if (eventName !== "change") {
-        control.addEventListener("change", () => {
+    [
+      state.controls.geometry,
+      state.controls.nCells,
+      state.controls.frameThickness,
+      state.controls.braceHalfWidth,
+      state.controls.patchCenter,
+      state.controls.patchWidth,
+      state.controls.young,
+      state.controls.poisson,
+    ]
+      .filter(Boolean)
+      .forEach((control) => {
+        const eventName = control.tagName === "SELECT" ? "change" : "input";
+        control.addEventListener(eventName, () => {
           updateValueLabels();
           invalidateSolveResult();
           schedulePreview();
         });
-      }
-    });
+      });
 
     if (state.controls.solveButton) {
       state.controls.solveButton.addEventListener("click", runSolve);
@@ -204,8 +214,12 @@ export function createNumericalCell({ ui, runtimeState, shell }) {
   }
 
   function schedulePreview() {
-    shell.setStatus("Updating FEM preview...");
-    shell.setControlsSummary("The Numerical Cell is fetching `/api/fem/preview` live as you change the geometry and load patch.");
+    state.isPreviewing = true;
+    shell.setStatus("Refreshing numerical preview", {
+      tone: "preview",
+      detail: "Mesh and boundary views update automatically as you change geometry or the top load patch.",
+    });
+    shell.setControlsSummary("Preview updates automatically as you change geometry, mesh density, or the top load patch.");
     if (state.previewTimer) {
       window.clearTimeout(state.previewTimer);
     }
@@ -215,6 +229,7 @@ export function createNumericalCell({ ui, runtimeState, shell }) {
   async function fetchPreview() {
     try {
       const payload = await fetchFemPreview(getConfig());
+      state.isPreviewing = false;
       state.latestPreview = payload;
       runtimeState.fem.latestPreview = payload;
       runtimeState.checkpointEvents["numerical-preview"] = {
@@ -227,11 +242,23 @@ export function createNumericalCell({ ui, runtimeState, shell }) {
         return;
       }
       renderCurrentCheckpoint();
-      shell.setStatus(`FEM preview ready (${payload.case_id})`);
+      shell.setStatus("Numerical preview ready", {
+        tone: "success",
+        detail: `Case ${payload.case_id} is ready to inspect or solve.`,
+      });
       updateGuide();
     } catch (error) {
-      shell.setStatus("FEM preview error");
-      shell.setGuide(`Unable to build the FEM preview.<br><br>${String(error)}`);
+      state.isPreviewing = false;
+      shell.setStatus("Numerical preview failed", {
+        tone: "error",
+        detail: "The preview request did not complete successfully.",
+      });
+      shell.setGuideSections([
+        {
+          title: "What to do next",
+          items: [`Check the current inputs and retry the preview.`, String(error)],
+        },
+      ]);
       renderNotePlot(ui.bottomPlot, "Preview Error", [String(error)]);
     }
   }
@@ -244,11 +271,23 @@ export function createNumericalCell({ ui, runtimeState, shell }) {
     state.isSolving = true;
     state.controls.solveButton.disabled = true;
     state.controls.solveButton.classList.add("opacity-60", "cursor-not-allowed");
-    shell.setStatus("Running FEM solve...");
-    shell.setGuide(
-      "<strong>Solving the FEM system.</strong><br><br>" +
-        "The Numerical Cell is assembling the stiffness matrix, applying the top-edge traction patch, and post-processing the von Mises field.",
-    );
+    shell.setStatus("Running FEM solve", {
+      tone: "running",
+      detail: "The solver is assembling the system, applying the top-edge traction patch, and post-processing the field.",
+    });
+    shell.setGuideSections([
+      {
+        title: "What is happening",
+        items: [
+          "The mesh and boundary conditions are being assembled into one static solve.",
+          "You will get a deformed mesh, a stress map, and a short solver summary.",
+        ],
+      },
+      {
+        title: "Why it matters",
+        items: ["This numerical result is the trust baseline for the later PINN comparison."],
+      },
+    ]);
 
     try {
       const payload = await fetchFemSolve(getConfig());
@@ -262,7 +301,10 @@ export function createNumericalCell({ ui, runtimeState, shell }) {
       };
       shell.refreshProgress();
       renderCurrentCheckpoint();
-      shell.setStatus(`FEM solve complete (${payload.case_id})`);
+      shell.setStatus("FEM solve complete", {
+        tone: "success",
+        detail: `Case ${payload.case_id} solved successfully. Review deformation, stress, and solve time.`,
+      });
       updateGuide();
     } catch (error) {
       runtimeState.checkpointEvents["numerical-solve"] = {
@@ -270,8 +312,16 @@ export function createNumericalCell({ ui, runtimeState, shell }) {
         message: String(error),
       };
       shell.refreshProgress();
-      shell.setStatus("FEM solve error");
-      shell.setGuide(`Unable to solve the FEM system.<br><br>${String(error)}`);
+      shell.setStatus("FEM solve failed", {
+        tone: "error",
+        detail: "The solve request returned an error before a result could be shown.",
+      });
+      shell.setGuideSections([
+        {
+          title: "What to do next",
+          items: ["Check the current setup, then rerun the solve.", String(error)],
+        },
+      ]);
       renderNotePlot(ui.bottomPlot, "Solve Error", [String(error)]);
     } finally {
       state.isSolving = false;
@@ -310,7 +360,7 @@ export function createNumericalCell({ ui, runtimeState, shell }) {
         rightTitle: "Boundary Conditions",
         rightSummary: "Bottom support and top load patch",
         bottomTitle: "Checkpoint Notes",
-        bottomSummary: "Numerical preview payload",
+        bottomSummary: `Case ${state.latestPreview.case_id}`,
       });
     } else {
       renderNotePlot(ui.leftPlot, "Numerical preview", [
@@ -323,7 +373,7 @@ export function createNumericalCell({ ui, runtimeState, shell }) {
         "Mesh counts and boundary metadata will appear here.",
       ]);
     }
-    shell.setControlsSummary("The Numerical Cell is fetching `/api/fem/preview` live as you change the geometry and load patch.");
+    shell.setControlsSummary("Use this preview to verify the support, load patch, and geometry before solving.");
   }
 
   function renderSolveCheckpoint() {
@@ -347,6 +397,7 @@ export function createNumericalCell({ ui, runtimeState, shell }) {
       return;
     }
 
+    const solveIsStale = runtimeState.checkpointEvents["numerical-solve"]?.status === "stale";
     if (state.latestPreview) {
       renderFemMeshPlot(ui.leftPlot, state.latestPreview);
       renderFemBoundaryPlot(ui.rightPlot, state.latestPreview);
@@ -359,16 +410,18 @@ export function createNumericalCell({ ui, runtimeState, shell }) {
       ]);
     }
     renderNotePlot(ui.bottomPlot, "Run FEM Solve", [
-      "Click the solve button to compute deformation and von Mises stress for the current setup.",
+      solveIsStale
+        ? "The previous solve is out of date because the setup changed. Run the solve again."
+        : "Click the solve button to compute deformation and von Mises stress for the current setup.",
       "This checkpoint completes automatically once the solve succeeds.",
     ]);
     shell.setPlotMeta({
       leftTitle: "Current Mesh",
       leftSummary: state.latestPreview ? `${state.latestPreview.mesh.counts.n_elements} elements` : "Preview not generated yet",
       rightTitle: "Current Boundary Conditions",
-      rightSummary: "Ready for solve",
+      rightSummary: solveIsStale ? "Preview changed since the last solve" : "Ready for solve",
       bottomTitle: "Solve Checkpoint",
-      bottomSummary: "Waiting for FEM solve",
+      bottomSummary: solveIsStale ? "Solve is stale" : "Waiting for FEM solve",
     });
   }
 
@@ -394,10 +447,12 @@ export function createNumericalCell({ ui, runtimeState, shell }) {
     }
 
     renderSolveCheckpoint();
-    shell.setGuide(
-      "<strong>Inspect the numerical result.</strong><br><br>" +
-        "Run the FEM solve first so this checkpoint has a real baseline to reflect on.",
-    );
+    shell.setGuideSections([
+      {
+        title: "What to do next",
+        items: ["Run the FEM solve first so this reflection step has a real numerical baseline."],
+      },
+    ]);
   }
 
   function invalidateSolveResult() {
@@ -408,6 +463,11 @@ export function createNumericalCell({ ui, runtimeState, shell }) {
         status: "stale",
       };
       shell.refreshProgress();
+      shell.setStatus("Numerical result needs a rerun", {
+        tone: "warning",
+        detail: "The preview changed after the last solve, so the displayed result is no longer current.",
+      });
+      updateGuide();
     }
   }
 
@@ -416,38 +476,60 @@ export function createNumericalCell({ ui, runtimeState, shell }) {
       return;
     }
 
-    const notes = [];
+    const notice = [];
+    const tryNext = [];
+    const why = [];
     const nCells = Number(state.controls.nCells.value);
     const patchWidth = Number(state.controls.patchWidth.value);
     const geometry = state.controls.geometry.value;
     const frameThickness = Number(state.controls.frameThickness.value);
 
     if (nCells < 24) {
-      notes.push("<strong>Coarse structured mesh.</strong> The preview is fine for storytelling, but stress concentration near corners will need more elements later.");
+      notice.push("The mesh is still coarse, so corners and load concentrations will be smoothed out.");
+      tryNext.push("Increase cells per side if you want a sharper stress picture.");
     }
     if (patchWidth < 0.10) {
-      notes.push("<strong>Narrow top load patch.</strong> The load becomes more localized and will demand better mesh quality in the final FEM solve.");
+      notice.push("The top load patch is narrow, so the force is more localized.");
     }
     if (frameThickness > 0.24) {
-      notes.push("<strong>Thick frame.</strong> Reinforcement effects may look less dramatic because the base frame is already quite stiff.");
+      notice.push("This is a thick frame, so added reinforcement may look less dramatic.");
     }
     if (geometry === "diagonal") {
-      notes.push("<strong>Single diagonal selected.</strong> Use the preview to inspect how the brace band reconnects the opening.");
+      notice.push("A single diagonal brace creates one main alternate load path.");
     }
     if (geometry === "x_brace") {
-      notes.push("<strong>X-brace selected.</strong> Expect more internal boundary segments and a denser highlighted region in the mesh.");
+      notice.push("The X-brace creates the stiffest reinforced option in this set.");
     }
     if (state.latestSolve && state.currentCheckpointId !== "numerical-preview") {
-      notes.push(
-        `<strong>FEM solve available.</strong> Max von Mises is ${formatNumber(state.latestSolve.summary.max_von_mises)} and the deformed mesh is scaled by ${formatNumber(state.latestSolve.summary.deformation_scale)} for visibility.`,
+      notice.push(
+        `Latest solve: max von Mises ${formatNumber(state.latestSolve.summary.max_von_mises)}, deformation scale ${formatNumber(state.latestSolve.summary.deformation_scale)}.`,
       );
+      why.push("Use this solved field as the numerical reference before trusting a PINN prediction.");
     }
 
-    if (!notes.length) {
-      notes.push("<strong>Numerical baseline preview ready.</strong> Review the support and top-edge load patch, then continue when the setup feels clear.");
+    if (runtimeState.checkpointEvents["numerical-solve"]?.status === "stale") {
+      tryNext.push("Run the FEM solve again so the result matches the current preview.");
     }
 
-    shell.setGuide(notes.join("<br><br>"));
+    if (state.currentCheckpointId === "numerical-preview") {
+      why.push("This step is about reading support and load placement before asking the solver for numbers.");
+    } else if (state.currentCheckpointId === "numerical-solve") {
+      tryNext.push("Solve once, then compare the deformed shape against the stress hot spots.");
+      why.push("A fast numerical baseline helps students judge whether a later PINN answer looks believable.");
+    } else {
+      tryNext.push("Compare where the frame deforms most against where the stress field peaks.");
+      why.push("This reflection step prepares the mental model you will carry into PINN training.");
+    }
+
+    if (!notice.length) {
+      notice.push("The numerical preview is ready. Check the support and top load placement before moving on.");
+    }
+
+    shell.setGuideSections([
+      { title: "What to notice", items: notice.slice(0, 3) },
+      { title: "What to try", items: tryNext.slice(0, 2) },
+      { title: "Why it matters", items: why.slice(0, 2) },
+    ]);
   }
 
   return {

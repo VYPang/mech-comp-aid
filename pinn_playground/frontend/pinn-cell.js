@@ -1,10 +1,11 @@
-import { createPinnSocket, fetchPinnPreview } from "./api.js";
-import { renderLossPlot, renderNotePlot, renderPointCloudPlot, renderStressHeatmap } from "./plots.js";
+import { createPinnSocket, fetchPinnPreview } from "./api.js?v=checkpoint-shell-5";
+import { renderLossPlot, renderNotePlot, renderPointCloudPlot, renderStressHeatmap } from "./plots.js?v=checkpoint-shell-5";
 
 export function createPinnCell({ ui, runtimeState, shell }) {
   const state = {
     socket: null,
     isTraining: false,
+    isPreviewing: false,
     previewTimer: null,
     currentCheckpointId: null,
     losses: {
@@ -44,69 +45,76 @@ export function createPinnCell({ ui, runtimeState, shell }) {
     ui.controlsForm.innerHTML = `
       <details class="toggle-panel" open>
         <summary>Geometry and Sampling</summary>
-        <div class="mt-4 grid gap-4 lg:grid-cols-2">
-          <div>
+        <div class="control-section-grid mt-4 lg:grid-cols-2">
+          <div class="control-card">
             <label for="pinn-geometry" class="field-label">Geometry</label>
             <select id="pinn-geometry" class="field-input">
               <option value="base">Base Frame</option>
               <option value="diagonal">Single Diagonal</option>
               <option value="x_brace">X-Brace</option>
             </select>
+            <p class="field-help">Match this with the numerical case you want to compare against later.</p>
           </div>
-          <div>
+          <div class="control-card">
             <label for="pinn-sampling-strategy" class="field-label">Sampling Strategy</label>
             <select id="pinn-sampling-strategy" class="field-input">
               <option value="uniform">Uniform</option>
               <option value="adaptive">Adaptive</option>
             </select>
+            <p class="field-help">Adaptive sampling adds more points near likely stress hot spots.</p>
           </div>
-          <div>
-            <div class="mb-1 flex items-center justify-between text-sm">
-              <label for="pinn-n-domain" class="font-medium text-slate-200">Domain Points</label>
-              <span id="pinn-n-domain-value" class="text-cyan-300">900</span>
+          <div class="control-card">
+            <div class="range-row">
+              <label for="pinn-n-domain">Domain Points</label>
+              <span id="pinn-n-domain-value" class="range-value">900</span>
             </div>
             <input id="pinn-n-domain" type="range" min="100" max="3000" step="50" value="900" class="field-range" />
+            <p class="field-help">Interior points tell the PINN where to satisfy the PDE.</p>
           </div>
-          <div>
-            <div class="mb-1 flex items-center justify-between text-sm">
-              <label for="pinn-n-boundary" class="font-medium text-slate-200">Boundary Points</label>
-              <span id="pinn-n-boundary-value" class="text-cyan-300">160</span>
+          <div class="control-card">
+            <div class="range-row">
+              <label for="pinn-n-boundary">Boundary Points</label>
+              <span id="pinn-n-boundary-value" class="range-value">160</span>
             </div>
             <input id="pinn-n-boundary" type="range" min="16" max="600" step="8" value="160" class="field-range" />
+            <p class="field-help">Boundary points help the model learn supports and loading conditions.</p>
           </div>
         </div>
       </details>
 
       <details class="toggle-panel" ${checkpoint.id === "pinn-train" ? "open" : ""}>
         <summary>PINN and Training</summary>
-        <div class="mt-4 grid gap-4 lg:grid-cols-2">
-          <div>
-            <div class="mb-1 flex items-center justify-between text-sm">
-              <label for="pinn-epochs" class="font-medium text-slate-200">Epochs</label>
-              <span id="pinn-epochs-value" class="text-cyan-300">500</span>
+        <div class="control-section-grid mt-4 lg:grid-cols-2">
+          <div class="control-card">
+            <div class="range-row">
+              <label for="pinn-epochs">Epochs</label>
+              <span id="pinn-epochs-value" class="range-value">500</span>
             </div>
             <input id="pinn-epochs" type="range" min="50" max="1200" step="50" value="500" class="field-range" />
+            <p class="field-help">Longer runs usually produce smoother loss and stress histories.</p>
           </div>
-          <div class="flex items-center justify-between rounded-xl border border-slate-700 bg-slate-950/60 px-3 py-2.5">
+          <div class="control-card flex items-center justify-between gap-4">
             <div>
               <label for="pinn-normalize-inputs" class="text-sm font-medium text-slate-200">Input Normalization</label>
               <p class="text-xs text-slate-400">Maps coordinates to [-1, 1] before the PINN.</p>
             </div>
             <input id="pinn-normalize-inputs" type="checkbox" checked class="h-5 w-5 rounded border-slate-600 bg-slate-800 text-cyan-400 focus:ring-cyan-400" />
           </div>
-          <div>
-            <div class="mb-1 flex items-center justify-between text-sm">
-              <label for="pinn-hidden-dim" class="font-medium text-slate-200">Hidden Width</label>
-              <span id="pinn-hidden-dim-value" class="text-cyan-300">48</span>
+          <div class="control-card">
+            <div class="range-row">
+              <label for="pinn-hidden-dim">Hidden Width</label>
+              <span id="pinn-hidden-dim-value" class="range-value">48</span>
             </div>
             <input id="pinn-hidden-dim" type="range" min="16" max="128" step="8" value="48" class="field-range" />
+            <p class="field-help">Wider layers increase capacity but also increase training cost.</p>
           </div>
-          <div>
-            <div class="mb-1 flex items-center justify-between text-sm">
-              <label for="pinn-n-hidden-layers" class="font-medium text-slate-200">Hidden Layers</label>
-              <span id="pinn-n-hidden-layers-value" class="text-cyan-300">4</span>
+          <div class="control-card">
+            <div class="range-row">
+              <label for="pinn-n-hidden-layers">Hidden Layers</label>
+              <span id="pinn-n-hidden-layers-value" class="range-value">4</span>
             </div>
             <input id="pinn-n-hidden-layers" type="range" min="2" max="6" step="1" value="4" class="field-range" />
+            <p class="field-help">More depth can fit harder fields, but may be slower to optimize.</p>
           </div>
         </div>
       </details>
@@ -114,20 +122,22 @@ export function createPinnCell({ ui, runtimeState, shell }) {
       <details class="toggle-panel" ${checkpoint.id === "pinn-train" ? "open" : ""}>
         <summary>Loss Weighting and Run Control</summary>
         <div class="mt-4 space-y-4">
-          <div class="grid gap-4 lg:grid-cols-2">
-            <div>
-              <div class="mb-1 flex items-center justify-between text-sm">
-                <label for="pinn-pde-weight" class="font-medium text-slate-200">PDE Weight</label>
-                <span id="pinn-pde-weight-value" class="text-cyan-300">1.0</span>
+          <div class="control-section-grid lg:grid-cols-2">
+            <div class="control-card">
+              <div class="range-row">
+                <label for="pinn-pde-weight">PDE Weight</label>
+                <span id="pinn-pde-weight-value" class="range-value">1.0</span>
               </div>
               <input id="pinn-pde-weight" type="range" min="0.2" max="10" step="0.1" value="1.0" class="field-range" />
+              <p class="field-help">Higher values emphasize interior equilibrium.</p>
             </div>
-            <div>
-              <div class="mb-1 flex items-center justify-between text-sm">
-                <label for="pinn-bc-weight" class="font-medium text-slate-200">BC Weight</label>
-                <span id="pinn-bc-weight-value" class="text-cyan-300">5.0</span>
+            <div class="control-card">
+              <div class="range-row">
+                <label for="pinn-bc-weight">BC Weight</label>
+                <span id="pinn-bc-weight-value" class="range-value">5.0</span>
               </div>
               <input id="pinn-bc-weight" type="range" min="0.2" max="10" step="0.1" value="5.0" class="field-range" />
+              <p class="field-help">Higher values emphasize support and loading conditions.</p>
             </div>
           </div>
           ${
@@ -192,11 +202,8 @@ export function createPinnCell({ ui, runtimeState, shell }) {
     ];
 
     controls.filter(Boolean).forEach((control) => {
-      control.addEventListener("input", () => {
-        updateValueLabels();
-        schedulePreview();
-      });
-      control.addEventListener("change", () => {
+      const eventName = control.tagName === "SELECT" ? "change" : "input";
+      control.addEventListener(eventName, () => {
         updateValueLabels();
         schedulePreview();
       });
@@ -245,13 +252,22 @@ export function createPinnCell({ ui, runtimeState, shell }) {
 
   function schedulePreview() {
     if (state.isTraining) {
+      shell.setStatus("Training is using the current PINN setup", {
+        tone: "running",
+        detail: "Finish or stop the run before requesting a fresh preview from new controls.",
+      });
       updateGuide();
       return;
     }
+    state.isPreviewing = true;
+    shell.setStatus("Refreshing PINN preview", {
+      tone: "preview",
+      detail: "Collocation points update automatically while you tune geometry, density, or loss weights.",
+    });
     shell.setControlsSummary(
       state.currentCheckpointId === "pinn-train"
-        ? "PINN preview updates remain live while you adjust geometry or loss settings before the next training run."
-        : "Use this checkpoint to inspect collocation before starting the PINN training stage.",
+        ? "Tune geometry or loss weighting here, then launch a training run when the collocation looks reasonable."
+        : "Use this preview step to understand the collocation cloud before training.",
     );
     if (state.previewTimer) {
       window.clearTimeout(state.previewTimer);
@@ -262,8 +278,8 @@ export function createPinnCell({ ui, runtimeState, shell }) {
 
   async function fetchPreview() {
     try {
-      shell.setStatus("Updating PINN preview...");
       const payload = await fetchPinnPreview(getConfig());
+      state.isPreviewing = false;
       state.latestPreview = payload;
       runtimeState.pinn.latestPreview = payload;
       runtimeState.checkpointEvents["pinn-preview"] = {
@@ -274,10 +290,25 @@ export function createPinnCell({ ui, runtimeState, shell }) {
         return;
       }
       renderPinnViews();
-      shell.setStatus("PINN preview ready");
+      if (!state.isTraining) {
+        shell.setStatus("PINN preview ready", {
+          tone: "success",
+          detail: `${payload.counts.n_domain} domain points and ${payload.counts.n_boundary} boundary points are ready to inspect.`,
+        });
+        updateGuide();
+      }
     } catch (error) {
-      shell.setStatus("PINN preview error");
-      shell.setGuide(`Unable to update the PINN preview.<br><br>${String(error)}`);
+      state.isPreviewing = false;
+      shell.setStatus("PINN preview failed", {
+        tone: "error",
+        detail: "The preview request did not complete successfully.",
+      });
+      shell.setGuideSections([
+        {
+          title: "What to do next",
+          items: ["Check the current inputs and try the preview again.", String(error)],
+        },
+      ]);
       renderNotePlot(ui.bottomPlot, "Preview Error", [String(error)]);
     }
   }
@@ -313,11 +344,12 @@ export function createPinnCell({ ui, runtimeState, shell }) {
           "Start a training run to populate the live stress heatmap.",
         ]);
       }
-      renderLossPlot(ui.bottomPlot, state.losses);
       if (state.losses.epoch.length === 0) {
         renderNotePlot(ui.bottomPlot, "Training Curves", [
           "A completed or in-progress training run will populate this plot.",
         ]);
+      } else {
+        renderLossPlot(ui.bottomPlot, state.losses);
       }
       return;
     }
@@ -351,18 +383,29 @@ export function createPinnCell({ ui, runtimeState, shell }) {
 
   function startTraining() {
     closeSocket();
+    if (state.previewTimer) {
+      window.clearTimeout(state.previewTimer);
+      state.previewTimer = null;
+    }
+    state.isPreviewing = false;
     resetLosses();
     state.latestMetrics = null;
     renderPinnViews();
     setTrainingState(true);
-    shell.setStatus("Connecting to PINN training...");
+    shell.setStatus("Connecting to PINN training", {
+      tone: "running",
+      detail: "Opening the live training session and preparing the first preview.",
+    });
     updateGuide();
 
     const socket = createPinnSocket();
     state.socket = socket;
 
     socket.addEventListener("open", () => {
-      shell.setStatus("Training PINN...");
+      shell.setStatus("Training PINN", {
+        tone: "running",
+        detail: "The model is now streaming previews, metrics, and final status over the live session.",
+      });
       socket.send(JSON.stringify({ type: "start", payload: getConfig() }));
     });
 
@@ -370,7 +413,10 @@ export function createPinnCell({ ui, runtimeState, shell }) {
       const message = JSON.parse(event.data);
 
       if (message.type === "session") {
-        shell.setStatus(`Training on ${message.device}`);
+        shell.setStatus("Training session ready", {
+          tone: "running",
+          detail: `Running on ${message.device}. Watch the loss curves and stress map update below.`,
+        });
         return;
       }
       if (message.type === "preview") {
@@ -394,6 +440,10 @@ export function createPinnCell({ ui, runtimeState, shell }) {
           epoch: message.epoch,
           totalLoss: message.total_loss,
         };
+        shell.setStatus("PINN training in progress", {
+          tone: "running",
+          detail: `Epoch ${message.epoch} \u00b7 total loss ${formatMetric(message.total_loss)}`,
+        });
         renderPinnViews();
         updateGuide();
         return;
@@ -405,7 +455,13 @@ export function createPinnCell({ ui, runtimeState, shell }) {
           epoch: message.epoch,
           bestTotalLoss: message.best_total_loss,
         };
-        shell.setStatus(message.status === "stopped" ? "PINN training stopped" : "PINN training completed");
+        shell.setStatus(message.status === "stopped" ? "PINN training stopped" : "PINN training completed", {
+          tone: message.status === "stopped" ? "warning" : "success",
+          detail:
+            message.status === "stopped"
+              ? "The last streamed state remains visible for inspection."
+              : `Best total loss ${formatMetric(message.best_total_loss)} at epoch ${message.epoch}.`,
+        });
         updateGuide();
         socket.close();
         return;
@@ -416,8 +472,16 @@ export function createPinnCell({ ui, runtimeState, shell }) {
           status: "error",
           message: message.message,
         };
-        shell.setStatus("PINN server error");
-        shell.setGuide(message.message);
+        shell.setStatus("PINN server error", {
+          tone: "error",
+          detail: "The live training session ended with an error from the backend.",
+        });
+        shell.setGuideSections([
+          {
+            title: "What to do next",
+            items: ["Review the error below, then retry with a simpler setup if needed.", message.message],
+          },
+        ]);
         socket.close();
       }
     });
@@ -428,13 +492,19 @@ export function createPinnCell({ ui, runtimeState, shell }) {
       }
       if (state.isTraining) {
         setTrainingState(false);
-        shell.setStatus("PINN training disconnected");
+        shell.setStatus("PINN training disconnected", {
+          tone: "error",
+          detail: "The WebSocket session closed before training completed.",
+        });
       }
     });
 
     socket.addEventListener("error", () => {
       setTrainingState(false);
-      shell.setStatus("PINN connection failed");
+      shell.setStatus("PINN connection failed", {
+        tone: "error",
+        detail: "The browser could not establish the live training connection.",
+      });
     });
   }
 
@@ -442,7 +512,10 @@ export function createPinnCell({ ui, runtimeState, shell }) {
     if (!state.socket) {
       return;
     }
-    shell.setStatus("Stopping PINN training...");
+    shell.setStatus("Stopping PINN training", {
+      tone: "warning",
+      detail: "Waiting for the training session to acknowledge the stop request.",
+    });
     try {
       state.socket.send(JSON.stringify({ type: "stop" }));
     } catch (_error) {
@@ -461,7 +534,10 @@ export function createPinnCell({ ui, runtimeState, shell }) {
     }
     setTrainingState(false);
     if (statusText) {
-      shell.setStatus(statusText);
+      shell.setStatus(statusText, {
+        tone: "idle",
+        detail: "Use the controls to preview a new setup or start another run.",
+      });
     }
   }
 
@@ -471,72 +547,91 @@ export function createPinnCell({ ui, runtimeState, shell }) {
     }
 
     const config = getConfig();
-    const notes = [];
+    const notice = [];
+    const tryNext = [];
+    const why = [];
 
     if (!config.normalize_inputs) {
-      notes.push("<strong>Normalization is OFF.</strong> This usually makes optimization less stable because the network sees raw coordinates rather than a balanced [-1, 1] input range.");
+      notice.push("Normalization is off, which usually makes optimization less stable.");
     }
     if (config.n_domain < 400) {
-      notes.push("<strong>Very low domain density.</strong> The PDE residual is being enforced on only a few interior points, so the learned stress field may look patchy or misleading.");
+      notice.push("Domain density is low, so the interior field may look patchy or misleading.");
     }
     if (config.n_boundary < 80) {
-      notes.push("<strong>Sparse boundary sampling.</strong> The model may satisfy the PDE in the interior but still violate supports or loading conditions around the frame.");
+      notice.push("Boundary sampling is sparse, so supports and loading may be learned less reliably.");
     }
     if (config.sampling_strategy === "adaptive") {
-      notes.push("<strong>Adaptive sampling.</strong> More points are placed near inner corners and brace joints where stress concentrations are likely to appear.");
+      notice.push("Adaptive sampling concentrates more points near corners and brace joints.");
     }
     if (config.geometry === "diagonal") {
-      notes.push("<strong>Single diagonal brace.</strong> Compare the stress map against the base frame to see how one load path changes the hotspot pattern.");
+      notice.push("A single diagonal brace creates one alternate load path across the opening.");
     }
     if (config.geometry === "x_brace") {
-      notes.push("<strong>X-brace selected.</strong> This usually creates the stiffest reinforcement among the three options and often lowers peak stress near the hole.");
+      notice.push("The X-brace is usually the stiffest reinforcement in this geometry set.");
     }
     if (config.pde_weight < 0.8) {
-      notes.push("<strong>Low PDE weight.</strong> The model may prioritize boundary fitting while doing a poorer job satisfying equilibrium inside the structure.");
+      tryNext.push("Raise PDE weight if the model fits the boundary but struggles inside the domain.");
     }
     if (config.bc_weight < 1.0) {
-      notes.push("<strong>Low BC weight.</strong> Watch whether the model drifts away from the clamped left edge or the imposed right-edge displacement.");
+      tryNext.push("Raise BC weight if support or loading conditions look poorly enforced.");
     }
 
     if (state.latestMetrics) {
       const { total_loss: totalLoss, pde_loss: pdeLoss, bc_loss: bcLoss } = state.latestMetrics;
       if (totalLoss > 5) {
-        notes.push("<strong>Loss is still high.</strong> Try more points, a simpler geometry, or turn normalization on to make optimization easier.");
+        notice.push("Total loss is still high, so the PINN has not settled yet.");
       }
       if (bcLoss > pdeLoss * 2) {
-        notes.push("<strong>Boundary conditions dominate.</strong> The network is struggling more with supports and loading than with the interior PDE residual.");
+        notice.push("Boundary loss dominates, so the supports or loading are harder than the interior PDE right now.");
       }
       if (pdeLoss > bcLoss * 2) {
-        notes.push("<strong>Physics residual dominates.</strong> Increase domain points or use adaptive sampling to help the network enforce equilibrium across the frame.");
+        notice.push("Physics loss dominates, so equilibrium is the harder part of the problem right now.");
       }
+      why.push(`Latest loss snapshot: total ${formatMetric(totalLoss)}, PDE ${formatMetric(pdeLoss)}, BC ${formatMetric(bcLoss)}.`);
     }
 
     if (state.currentCheckpointId === "pinn-preview") {
-      notes.push("<strong>Preview-first checkpoint.</strong> Use this stage to understand the point cloud before you train.");
+      notice.push("This step is for understanding the point cloud before you train.");
+      tryNext.push("Compare uniform and adaptive sampling before moving on.");
+      why.push("Seeing the collocation cloud first makes the later stress map easier to interpret.");
+    } else if (state.isTraining) {
+      tryNext.push("Let the run progress for a few epochs before judging the stress map.");
+      why.push("The live curves show whether the PINN is balancing physics and boundary conditions.");
+    } else if (state.currentCheckpointId === "pinn-train") {
+      tryNext.push("Change one setting at a time, then start another run to see what moved the curves.");
+      why.push("Short, repeated experiments help students learn which settings change convergence.");
     }
 
-    if (!notes.length) {
-      notes.push("<strong>Balanced baseline.</strong> Start training and compare how the three reinforcement options change the stress field and loss curves.");
+    if (!notice.length) {
+      notice.push("This setup is balanced enough to begin a teaching run.");
     }
 
-    shell.setGuide(notes.join("<br><br>"));
+    if (!why.length) {
+      why.push("The goal is not only to train a PINN, but to judge when its answer is believable.");
+    }
+
+    shell.setGuideSections([
+      { title: "What to notice", items: notice.slice(0, 3) },
+      { title: "What to try", items: tryNext.slice(0, 2) },
+      { title: "Why it matters", items: why.slice(0, 2) },
+    ]);
   }
 
   function renderCompareCheckpoint(checkpoint) {
     const femCaseId = runtimeState.fem.latestPreview?.case_id;
     const latestEpoch = runtimeState.pinn.latestMetrics?.epoch;
 
-    renderNotePlot(ui.leftPlot, "Future FEM Baseline", [
-      femCaseId ? `Latest numerical case: ${femCaseId}` : "No numerical case has been previewed in this session.",
-      "This panel will later host FEM fields or exported comparison data.",
+    renderNotePlot(ui.leftPlot, "FEM Reference", [
+      femCaseId ? `Latest numerical case: ${femCaseId}` : "No numerical case is available yet.",
+      "This panel can later host the FEM field used for comparison.",
     ]);
-    renderNotePlot(ui.rightPlot, "Future PINN Snapshot", [
-      latestEpoch ? `Latest PINN epoch seen: ${latestEpoch}` : "No PINN training metrics have been captured in this session.",
-      "This panel will later host the PINN side of the comparison.",
+    renderNotePlot(ui.rightPlot, "PINN Reference", [
+      latestEpoch ? `Latest PINN epoch: ${latestEpoch}` : "No PINN training metrics are available yet.",
+      "This panel can later host the matching PINN field.",
     ]);
-    renderNotePlot(ui.bottomPlot, "Comparison Roadmap", [
-      "The checkpoint shell is ready for a future FEM-vs-PINN comparison step.",
-      "Once FEM solve exists, this checkpoint can switch from manual to rule-based completion.",
+    renderNotePlot(ui.bottomPlot, "Comparison Step", [
+      "This stage is reserved for a later FEM-versus-PINN comparison view.",
+      "The shell is already laid out so that comparison can be added without changing the learning flow.",
     ]);
 
     shell.setPlotMeta({
@@ -545,18 +640,37 @@ export function createPinnCell({ ui, runtimeState, shell }) {
       rightTitle: "PINN Reference",
       rightSummary: latestEpoch ? `Epoch ${latestEpoch}` : "Waiting for PINN data",
       bottomTitle: "Comparison Checkpoint",
-      bottomSummary: "Planned future integration",
+      bottomSummary: "Reserved for future work",
     });
     shell.setControlsSummary(checkpoint.controlsSubtitle);
-    shell.setStatus("PINN comparison checkpoint active");
-    shell.setGuide(
-      `<strong>${checkpoint.title}</strong><br><br>${checkpoint.subtitle}<br><br>` +
-        "This stage is intentionally scaffolded so the shell can grow into automatic FEM-vs-PINN requirement checks later.",
-    );
+    shell.setStatus("Comparison checkpoint active", {
+      tone: "idle",
+      detail: "This shell region is reserved for a future side-by-side validation step.",
+    });
+    shell.setGuideSections([
+      {
+        title: "What to notice",
+        items: ["Both the numerical and PINN cells now flow into a future comparison landing zone."],
+      },
+      {
+        title: "Why it matters",
+        items: ["Keeping a comparison checkpoint in the sequence reinforces that PINN results should be checked against a trusted baseline."],
+      },
+    ]);
   }
 
   return {
     enter,
     leave,
   };
+}
+
+function formatMetric(value) {
+  if (!Number.isFinite(value)) {
+    return "n/a";
+  }
+  if (Math.abs(value) >= 1000 || (Math.abs(value) > 0 && Math.abs(value) < 1e-3)) {
+    return value.toExponential(2);
+  }
+  return value.toFixed(3);
 }

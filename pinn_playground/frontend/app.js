@@ -1,14 +1,22 @@
-import { createProgressStore } from "./progress-state.js";
-import { createAppShell } from "./shell.js";
+import { createProgressStore } from "./progress-state.js?v=checkpoint-shell-5";
+import { createAppShell } from "./shell.js?v=checkpoint-shell-5";
 
 function bootstrap() {
   const ui = {
+    mainLayout: document.getElementById("main-layout"),
     controlsForm: document.getElementById("controls-form"),
+    statusPill: document.getElementById("status-pill"),
     statusText: document.getElementById("status-text"),
+    statusDetail: document.getElementById("status-detail"),
     learningPath: document.getElementById("learning-path"),
+    learningPathAside: document.getElementById("learning-path-aside"),
+    learningPathPanel: document.getElementById("learning-path-panel"),
+    learningPathBody: document.getElementById("learning-path-body"),
+    learningPathDescription: document.getElementById("learning-path-description"),
     workspaceCellLabel: document.getElementById("workspace-cell-label"),
     workspaceTitle: document.getElementById("workspace-title"),
     workspaceSubtitle: document.getElementById("workspace-subtitle"),
+    workspaceProgress: document.getElementById("workspace-progress"),
     workspaceBadge: document.getElementById("workspace-badge"),
     controlsTitle: document.getElementById("controls-title"),
     controlsSubtitle: document.getElementById("controls-subtitle"),
