@@ -386,48 +386,103 @@ def sample_boundary_points(
         nxs.extend([nx] * n_per_edge)
         nys.extend([ny] * n_per_edge)
 
+    def add_vertical_intervals(
+        x_const: float,
+        intervals: list[tuple[float, float]],
+        nx: float,
+        ny: float,
+    ) -> None:
+        counts = _interval_sample_counts(intervals, n_per_edge)
+        for (y0, y1), count in zip(intervals, counts):
+            if count <= 0:
+                continue
+            t = rng.uniform(y0, y1, size=count)
+            xs.extend([x_const] * count)
+            ys.extend(t.tolist())
+            nxs.extend([nx] * count)
+            nys.extend([ny] * count)
+
+    def add_horizontal_intervals(
+        y_const: float,
+        intervals: list[tuple[float, float]],
+        nx: float,
+        ny: float,
+    ) -> None:
+        counts = _interval_sample_counts(intervals, n_per_edge)
+        for (x0, x1), count in zip(intervals, counts):
+            if count <= 0:
+                continue
+            t = rng.uniform(x0, x1, size=count)
+            ys.extend([y_const] * count)
+            xs.extend(t.tolist())
+            nxs.extend([nx] * count)
+            nys.extend([ny] * count)
+
     # Outer boundary (outward normals)
     add_edge_vertical(OUTER_LO, OUTER_LO, OUTER_HI, -1.0, 0.0)
     add_edge_vertical(OUTER_HI, OUTER_LO, OUTER_HI, 1.0, 0.0)
     add_edge_horizontal(OUTER_LO, OUTER_LO, OUTER_HI, 0.0, -1.0)
     add_edge_horizontal(OUTER_HI, OUTER_LO, OUTER_HI, 0.0, 1.0)
 
-    # Inner hole (normals point into void = outward from solid)
-    add_edge_vertical(geometry_config.inner_lo, geometry_config.inner_lo, geometry_config.inner_hi, 1.0, 0.0)
-    add_edge_vertical(geometry_config.inner_hi, geometry_config.inner_lo, geometry_config.inner_hi, -1.0, 0.0)
-    add_edge_horizontal(geometry_config.inner_lo, geometry_config.inner_lo, geometry_config.inner_hi, 0.0, 1.0)
-    add_edge_horizontal(geometry_config.inner_hi, geometry_config.inner_lo, geometry_config.inner_hi, 0.0, -1.0)
+    # Inner hole (normals point into void = outward from solid), trimmed where braces occupy the opening.
+    hole_segments = _opening_boundary_segments(geometry_config)
+    add_vertical_intervals(geometry_config.inner_lo, hole_segments["left"], 1.0, 0.0)
+    add_vertical_intervals(geometry_config.inner_hi, hole_segments["right"], -1.0, 0.0)
+    add_horizontal_intervals(geometry_config.inner_lo, hole_segments["bottom"], 0.0, 1.0)
+    add_horizontal_intervals(geometry_config.inner_hi, hole_segments["top"], 0.0, -1.0)
 
     if include_brace_surface and g != GeometryType.BASE:
-        # Sample along brace centerlines; normals perpendicular to brace in 2D
+        # Sample along the actual exposed brace sides inside the opening, not the brace centerlines.
         n_seg = max(1, n_per_edge // 2)
 
-        def add_sloped_segment(ax: float, ay: float, bx: float, by: float) -> None:
-            dx, dy = bx - ax, by - ay
-            length = float(np.hypot(dx, dy)) + 1e-12
-            tx, ty = dx / length, dy / length
-            # perpendicular (outward from solid on one side — consistent choice)
-            nx_, ny_ = ty, -tx
-            ts = rng.uniform(0.0, 1.0, size=n_seg)
-            for t in ts:
-                xs.append(ax + t * dx)
-                ys.append(ay + t * dy)
-                nxs.append(nx_)
-                nys.append(ny_)
-
-        add_sloped_segment(
-            geometry_config.inner_lo,
-            geometry_config.inner_lo,
-            geometry_config.inner_hi,
-            geometry_config.inner_hi,
-        )
-        if g == GeometryType.X_BRACE:
-            add_sloped_segment(
+        def add_clipped_segment(
+            ax: float,
+            ay: float,
+            bx: float,
+            by: float,
+            nx: float,
+            ny: float,
+        ) -> None:
+            clipped = _clip_segment_to_box(
+                ax,
+                ay,
+                bx,
+                by,
                 geometry_config.inner_lo,
                 geometry_config.inner_hi,
-                geometry_config.inner_hi,
                 geometry_config.inner_lo,
+                geometry_config.inner_hi,
             )
+            if clipped is None:
+                return
+            cx0, cy0, cx1, cy1 = clipped
+            ts = rng.uniform(0.0, 1.0, size=n_seg)
+            dx = cx1 - cx0
+            dy = cy1 - cy0
+            probe = max(1e-4, 0.25 * geometry_config.brace_half_width)
+            for t in ts:
+                px = cx0 + t * dx
+                py = cy0 + t * dy
+                inside = geometry_mask_np(
+                    np.asarray([px - probe * nx], dtype=np.float64),
+                    np.asarray([py - probe * ny], dtype=np.float64),
+                    geometry_config,
+                )[0]
+                outside = geometry_mask_np(
+                    np.asarray([px + probe * nx], dtype=np.float64),
+                    np.asarray([py + probe * ny], dtype=np.float64),
+                    geometry_config,
+                )[0]
+                if not inside or outside:
+                    continue
+                xs.append(px)
+                ys.append(py)
+                nxs.append(nx)
+                nys.append(ny)
+
+        brace_kind = GeometryType.X_BRACE if g == GeometryType.X_BRACE else GeometryType.DIAGONAL
+        for segment in _brace_boundary_segments(geometry_config, brace_kind):
+            add_clipped_segment(*segment)
 
     return (
         np.asarray(xs, dtype=np.float32),
@@ -435,6 +490,174 @@ def sample_boundary_points(
         np.asarray(nxs, dtype=np.float32),
         np.asarray(nys, dtype=np.float32),
     )
+
+
+def _interval_sample_counts(
+    intervals: list[tuple[float, float]],
+    total_count: int,
+) -> list[int]:
+    if total_count <= 0 or not intervals:
+        return [0 for _ in intervals]
+
+    lengths = np.asarray([max(0.0, hi - lo) for lo, hi in intervals], dtype=np.float64)
+    total_length = float(lengths.sum())
+    if total_length <= 1e-12:
+        counts = [0 for _ in intervals]
+        counts[0] = total_count
+        return counts
+
+    raw = lengths / total_length * float(total_count)
+    counts = np.floor(raw).astype(int)
+    remainder = total_count - int(counts.sum())
+    if remainder > 0:
+        order = np.argsort(-(raw - counts))
+        for idx in order[:remainder]:
+            counts[idx] += 1
+    return counts.tolist()
+
+
+def _merge_intervals(intervals: list[tuple[float, float]]) -> list[tuple[float, float]]:
+    if not intervals:
+        return []
+    sorted_intervals = sorted(intervals)
+    merged: list[list[float]] = [[sorted_intervals[0][0], sorted_intervals[0][1]]]
+    for lo, hi in sorted_intervals[1:]:
+        current = merged[-1]
+        if lo <= current[1]:
+            current[1] = max(current[1], hi)
+            continue
+        merged.append([lo, hi])
+    return [(lo, hi) for lo, hi in merged]
+
+
+def _subtract_intervals(
+    span: tuple[float, float],
+    covered: list[tuple[float, float]],
+) -> list[tuple[float, float]]:
+    lo, hi = span
+    if hi <= lo:
+        return []
+    free: list[tuple[float, float]] = []
+    cursor = lo
+    for cov_lo, cov_hi in _merge_intervals(covered):
+        cov_lo = max(lo, cov_lo)
+        cov_hi = min(hi, cov_hi)
+        if cov_hi <= cov_lo:
+            continue
+        if cov_lo > cursor:
+            free.append((cursor, cov_lo))
+        cursor = max(cursor, cov_hi)
+    if cursor < hi:
+        free.append((cursor, hi))
+    return [(seg_lo, seg_hi) for seg_lo, seg_hi in free if seg_hi - seg_lo > 1e-9]
+
+
+def _opening_boundary_segments(geometry: StructuralGeometryConfig) -> dict[str, list[tuple[float, float]]]:
+    lo = geometry.inner_lo
+    hi = geometry.inner_hi
+    covered = {"left": [], "right": [], "bottom": [], "top": []}
+
+    if geometry.geometry in {GeometryType.DIAGONAL.value, GeometryType.X_BRACE.value}:
+        delta = np.sqrt(2.0) * geometry.brace_half_width
+        covered["left"].append((lo, min(hi, lo + delta)))
+        covered["bottom"].append((lo, min(hi, lo + delta)))
+        covered["right"].append((max(lo, hi - delta), hi))
+        covered["top"].append((max(lo, hi - delta), hi))
+
+    if geometry.geometry == GeometryType.X_BRACE.value:
+        delta = np.sqrt(2.0) * geometry.brace_half_width
+        covered["left"].append((max(lo, hi - delta), hi))
+        covered["top"].append((lo, min(hi, lo + delta)))
+        covered["right"].append((lo, min(hi, lo + delta)))
+        covered["bottom"].append((max(lo, hi - delta), hi))
+
+    return {
+        "left": _subtract_intervals((lo, hi), covered["left"]),
+        "right": _subtract_intervals((lo, hi), covered["right"]),
+        "bottom": _subtract_intervals((lo, hi), covered["bottom"]),
+        "top": _subtract_intervals((lo, hi), covered["top"]),
+    }
+
+
+def _clip_segment_to_box(
+    x0: float,
+    y0: float,
+    x1: float,
+    y1: float,
+    xmin: float,
+    xmax: float,
+    ymin: float,
+    ymax: float,
+) -> tuple[float, float, float, float] | None:
+    dx = x1 - x0
+    dy = y1 - y0
+    t0 = 0.0
+    t1 = 1.0
+
+    for p, q in ((-dx, x0 - xmin), (dx, xmax - x0), (-dy, y0 - ymin), (dy, ymax - y0)):
+        if abs(p) <= 1e-12:
+            if q < 0.0:
+                return None
+            continue
+        r = q / p
+        if p < 0.0:
+            if r > t1:
+                return None
+            t0 = max(t0, r)
+        else:
+            if r < t0:
+                return None
+            t1 = min(t1, r)
+
+    if t1 < t0:
+        return None
+
+    return (
+        x0 + t0 * dx,
+        y0 + t0 * dy,
+        x0 + t1 * dx,
+        y0 + t1 * dy,
+    )
+
+
+def _brace_boundary_segments(
+    geometry: StructuralGeometryConfig,
+    brace_kind: GeometryType,
+) -> list[tuple[float, float, float, float, float, float]]:
+    segments: list[tuple[float, float, float, float, float, float]] = []
+    w = geometry.brace_half_width
+
+    def add_segment(
+        ax: float,
+        ay: float,
+        bx: float,
+        by: float,
+    ) -> None:
+        dx = bx - ax
+        dy = by - ay
+        length = float(np.hypot(dx, dy)) + 1e-12
+        tx = dx / length
+        ty = dy / length
+        nx = ty
+        ny = -tx
+        segments.append((ax + nx * w, ay + ny * w, bx + nx * w, by + ny * w, nx, ny))
+        segments.append((ax - nx * w, ay - ny * w, bx - nx * w, by - ny * w, -nx, -ny))
+
+    if brace_kind in {GeometryType.DIAGONAL, GeometryType.X_BRACE}:
+        add_segment(
+            geometry.inner_lo,
+            geometry.inner_lo,
+            geometry.inner_hi,
+            geometry.inner_hi,
+        )
+    if brace_kind == GeometryType.X_BRACE:
+        add_segment(
+            geometry.inner_lo,
+            geometry.inner_hi,
+            geometry.inner_hi,
+            geometry.inner_lo,
+        )
+    return segments
 
 
 # ---------------------------------------------------------------------------

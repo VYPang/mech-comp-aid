@@ -5,6 +5,8 @@ const plotLayoutBase = {
   margin: { l: 52, r: 24, t: 22, b: 44 },
 };
 
+const loadPatchColor = "#22c55e";
+
 export function initializeShellPlots(ids) {
   renderNotePlot(ids.left, "Waiting for a checkpoint", [
     "The active cell will draw into this panel.",
@@ -52,7 +54,7 @@ export function renderPointCloudPlot(containerId, payload) {
       x1: xMax,
       y0: 1,
       y1: 1,
-      line: { color: "#f97316", width: 5 },
+      line: { color: loadPatchColor, width: 5 },
       layer: "above",
     });
 
@@ -62,7 +64,7 @@ export function renderPointCloudPlot(containerId, payload) {
       type: "scatter",
       mode: "lines",
       name: "Top Load Patch",
-      line: { color: "#f97316", width: 5 },
+      line: { color: loadPatchColor, width: 5 },
       hoverinfo: "skip",
       visible: "legendonly",
     });
@@ -187,7 +189,7 @@ export function renderFemMeshPlot(containerId, payload) {
         type: "scattergl",
         mode: "lines",
         name: "Top Load Patch",
-        line: { color: "#f97316", width: 5 },
+        line: { color: loadPatchColor, width: 5 },
       },
     ],
     {
@@ -248,7 +250,7 @@ export function renderFemBoundaryPlot(containerId, payload) {
         type: "scattergl",
         mode: "lines",
         name: "Top Load Patch",
-        line: { color: "#f97316", width: 5 },
+        line: { color: loadPatchColor, width: 5 },
       },
       {
         x: payload.boundaries.internal.x,
