@@ -1,5 +1,17 @@
-import { fetchFemPreview, fetchFemSolve } from "./api.js?v=checkpoint-shell-5";
-import { renderFemBoundaryPlot, renderFemDeformedPlot, renderFemMeshPlot, renderNotePlot, renderStressHeatmap } from "./plots.js?v=checkpoint-shell-5";
+import { fetchFemPreview, fetchFemSolve } from "./api.js?v=checkpoint-shell-6";
+import { renderFemBoundaryPlot, renderFemDeformedPlot, renderFemMeshPlot, renderNotePlot, renderStressHeatmap } from "./plots.js?v=checkpoint-shell-6";
+
+/** Defaults when no saved state (e.g. first visit or after reset). */
+const DEFAULT_FEM_CONTROLS = {
+  geometry: "base",
+  nCells: "40",
+  frameThickness: "0.18",
+  braceHalfWidth: "0.018",
+  patchCenter: "0.50",
+  patchWidth: "0.20",
+  young: "210000000000",
+  poisson: "0.3",
+};
 
 export function createNumericalCell({ ui, runtimeState, shell }) {
   const state = {
@@ -12,6 +24,29 @@ export function createNumericalCell({ ui, runtimeState, shell }) {
     controls: null,
   };
 
+  function getMergedFemControls() {
+    return { ...DEFAULT_FEM_CONTROLS, ...(runtimeState.fem?.savedControls ?? {}) };
+  }
+
+  function captureFemControlsToRuntime() {
+    if (!state.controls?.geometry) {
+      return;
+    }
+    if (!runtimeState.fem) {
+      runtimeState.fem = {};
+    }
+    runtimeState.fem.savedControls = {
+      geometry: state.controls.geometry.value,
+      nCells: state.controls.nCells.value,
+      frameThickness: state.controls.frameThickness.value,
+      braceHalfWidth: state.controls.braceHalfWidth.value,
+      patchCenter: state.controls.patchCenter.value,
+      patchWidth: state.controls.patchWidth.value,
+      young: state.controls.young.value,
+      poisson: state.controls.poisson.value,
+    };
+  }
+
   function enter(checkpoint) {
     state.currentCheckpointId = checkpoint.id;
     renderControls(checkpoint);
@@ -23,6 +58,7 @@ export function createNumericalCell({ ui, runtimeState, shell }) {
   }
 
   function leave() {
+    captureFemControlsToRuntime();
     if (state.previewTimer) {
       window.clearTimeout(state.previewTimer);
       state.previewTimer = null;
@@ -31,6 +67,7 @@ export function createNumericalCell({ ui, runtimeState, shell }) {
   }
 
   function renderControls(checkpoint) {
+    const v = getMergedFemControls();
     ui.controlsForm.innerHTML = `
       <details class="toggle-panel" open>
         <summary>Geometry and Mesh</summary>
@@ -38,34 +75,34 @@ export function createNumericalCell({ ui, runtimeState, shell }) {
           <div class="control-card">
             <label for="fem-geometry" class="field-label">Geometry</label>
             <select id="fem-geometry" class="field-input">
-              <option value="base">Base Frame</option>
-              <option value="diagonal">Single Diagonal</option>
-              <option value="x_brace">X-Brace</option>
+              <option value="base" ${v.geometry === "base" ? "selected" : ""}>Base Frame</option>
+              <option value="diagonal" ${v.geometry === "diagonal" ? "selected" : ""}>Single Diagonal</option>
+              <option value="x_brace" ${v.geometry === "x_brace" ? "selected" : ""}>X-Brace</option>
             </select>
             <p class="field-help">Pick the frame layout you want to inspect before solving.</p>
           </div>
           <div class="control-card">
             <div class="range-row">
               <label for="fem-n-cells">Structured Cells per Side</label>
-              <span id="fem-n-cells-value" class="range-value">40</span>
+              <span id="fem-n-cells-value" class="range-value"></span>
             </div>
-            <input id="fem-n-cells" type="range" min="12" max="80" step="2" value="40" class="field-range" />
+            <input id="fem-n-cells" type="range" min="12" max="80" step="2" value="${v.nCells}" class="field-range" />
             <p class="field-help">More cells resolve corners and load transfer more clearly.</p>
           </div>
           <div class="control-card">
             <div class="range-row">
               <label for="fem-frame-thickness">Frame Thickness</label>
-              <span id="fem-frame-thickness-value" class="range-value">0.18</span>
+              <span id="fem-frame-thickness-value" class="range-value"></span>
             </div>
-            <input id="fem-frame-thickness" type="range" min="0.10" max="0.32" step="0.01" value="0.18" class="field-range" />
+            <input id="fem-frame-thickness" type="range" min="0.10" max="0.32" step="0.01" value="${v.frameThickness}" class="field-range" />
             <p class="field-help">A thinner frame makes reinforcement effects easier to see.</p>
           </div>
           <div class="control-card">
             <div class="range-row">
               <label for="fem-brace-half-width">Brace Half Width</label>
-              <span id="fem-brace-half-width-value" class="range-value">0.018</span>
+              <span id="fem-brace-half-width-value" class="range-value"></span>
             </div>
-            <input id="fem-brace-half-width" type="range" min="0.006" max="0.05" step="0.002" value="0.018" class="field-range" />
+            <input id="fem-brace-half-width" type="range" min="0.006" max="0.05" step="0.002" value="${v.braceHalfWidth}" class="field-range" />
             <p class="field-help">Brace width only matters for the reinforced geometries.</p>
           </div>
         </div>
@@ -77,17 +114,17 @@ export function createNumericalCell({ ui, runtimeState, shell }) {
           <div class="control-card">
             <div class="range-row">
               <label for="fem-patch-center">Patch Center (x)</label>
-              <span id="fem-patch-center-value" class="range-value">0.50</span>
+              <span id="fem-patch-center-value" class="range-value"></span>
             </div>
-            <input id="fem-patch-center" type="range" min="0.15" max="0.85" step="0.01" value="0.50" class="field-range" />
+            <input id="fem-patch-center" type="range" min="0.15" max="0.85" step="0.01" value="${v.patchCenter}" class="field-range" />
             <p class="field-help">Slide the applied traction left or right along the top edge.</p>
           </div>
           <div class="control-card">
             <div class="range-row">
               <label for="fem-patch-width">Patch Width</label>
-              <span id="fem-patch-width-value" class="range-value">0.20</span>
+              <span id="fem-patch-width-value" class="range-value"></span>
             </div>
-            <input id="fem-patch-width" type="range" min="0.04" max="0.45" step="0.01" value="0.20" class="field-range" />
+            <input id="fem-patch-width" type="range" min="0.04" max="0.45" step="0.01" value="${v.patchWidth}" class="field-range" />
             <p class="field-help">A narrower patch creates a more localized response.</p>
           </div>
         </div>
@@ -98,12 +135,12 @@ export function createNumericalCell({ ui, runtimeState, shell }) {
         <div class="control-section-grid mt-4 lg:grid-cols-2">
           <div class="control-card">
             <label for="fem-young" class="field-label">Young's Modulus</label>
-            <input id="fem-young" type="number" value="210000000000" step="1000000000" class="field-input" />
+            <input id="fem-young" type="number" value="${v.young}" step="1000000000" class="field-input" />
             <p class="field-help">Default steel stiffness for the teaching baseline.</p>
           </div>
           <div class="control-card">
             <label for="fem-poisson" class="field-label">Poisson Ratio</label>
-            <input id="fem-poisson" type="number" value="0.3" step="0.01" class="field-input" />
+            <input id="fem-poisson" type="number" value="${v.poisson}" step="0.01" class="field-input" />
             <p class="field-help">Lateral contraction ratio used during the solve.</p>
           </div>
         </div>

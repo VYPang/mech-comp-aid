@@ -10,6 +10,11 @@ The short conclusion is:
 - it is **not yet a trustworthy reference solver**
 - the project should build the FEM baseline first, then return to PINN with clear ground truth and comparison metrics
 
+Note as of 2026-04-16:
+
+- the PINN control surface and backend problem definition now align with the FEM baseline for geometry, material, bottom support, and top-edge traction patch
+- the remaining work is about trust, comparison, and robustness rather than basic parameter mismatch
+
 ## Current Status
 
 The repo already contains a working PINN web app under `pinn_playground/`:
@@ -34,8 +39,7 @@ Current key files:
 
 The current formulation is educational, but several issues make it weak as the main teaching baseline:
 
-1. The loading is displacement-controlled, not force-controlled.
-   The right boundary is prescribed with `u = load_displacement`; there is no explicit traction or point load.
+1. The PINN is now configured on the same bottom-support plus top traction-patch problem as FEM, but it is still not a trusted reference solver.
 
 2. The geometry for reinforcement is mechanically inconsistent.
    The brace is modeled as a finite-width band in the domain, but the traction-free brace boundary is approximated using brace centerlines.

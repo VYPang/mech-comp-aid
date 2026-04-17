@@ -14,17 +14,15 @@ from typing import Literal
 import numpy as np
 import torch
 
+from pinn_playground.backend.problem_definition import StructuralGeometryConfig, StructuralProblemConfig
+
 # ---------------------------------------------------------------------------
 # Geometry parameters (normalized coordinates)
 # ---------------------------------------------------------------------------
 
 OUTER_LO = 0.0
 OUTER_HI = 1.0
-# Centered square hole — leaves a thick frame for visualization
-INNER_LO = 0.38
-INNER_HI = 0.62
-# Half-width of brace “beams” in normalized length units
-BRACE_HALF_WIDTH = 0.018
+DEFAULT_GEOMETRY = StructuralGeometryConfig()
 
 
 class GeometryType(str, Enum):
@@ -105,51 +103,122 @@ def _point_segment_distance_torch(
 # ---------------------------------------------------------------------------
 
 
-def frame_mask_np(x: np.ndarray, y: np.ndarray) -> np.ndarray:
+def _coerce_geometry_config(
+    geometry: StructuralProblemConfig | StructuralGeometryConfig | GeometryType | str,
+) -> StructuralGeometryConfig:
+    if isinstance(geometry, StructuralProblemConfig):
+        return geometry.geometry
+    if isinstance(geometry, StructuralGeometryConfig):
+        return geometry
+    if isinstance(geometry, GeometryType):
+        return StructuralGeometryConfig(geometry=geometry.value)
+    return StructuralGeometryConfig(geometry=geometry)
+
+
+def frame_mask_np(
+    x: np.ndarray,
+    y: np.ndarray,
+    geometry: StructuralProblemConfig | StructuralGeometryConfig | GeometryType | str = DEFAULT_GEOMETRY,
+) -> np.ndarray:
     """Solid frame: inside outer square, outside inner hole."""
+    geometry_config = _coerce_geometry_config(geometry)
     outer = (x >= OUTER_LO) & (x <= OUTER_HI) & (y >= OUTER_LO) & (y <= OUTER_HI)
-    hole = (x > INNER_LO) & (x < INNER_HI) & (y > INNER_LO) & (y < INNER_HI)
+    hole = (
+        (x > geometry_config.inner_lo)
+        & (x < geometry_config.inner_hi)
+        & (y > geometry_config.inner_lo)
+        & (y < geometry_config.inner_hi)
+    )
     return outer & ~hole
 
 
-def brace_band_mask_np(x: np.ndarray, y: np.ndarray, geometry: GeometryType) -> np.ndarray:
+def brace_band_mask_np(
+    x: np.ndarray,
+    y: np.ndarray,
+    geometry: StructuralProblemConfig | StructuralGeometryConfig | GeometryType | str,
+) -> np.ndarray:
     """Thin bands across the opening (diagonal / X)."""
-    if geometry == GeometryType.BASE:
+    geometry_config = _coerce_geometry_config(geometry)
+    geometry_kind = GeometryType(geometry_config.geometry)
+
+    if geometry_kind == GeometryType.BASE:
         return np.zeros_like(x, dtype=bool)
 
-    d1 = _point_segment_distance_np(x, y, INNER_LO, INNER_LO, INNER_HI, INNER_HI)
-    m = d1 <= BRACE_HALF_WIDTH
+    d1 = _point_segment_distance_np(
+        x,
+        y,
+        geometry_config.inner_lo,
+        geometry_config.inner_lo,
+        geometry_config.inner_hi,
+        geometry_config.inner_hi,
+    )
+    m = d1 <= geometry_config.brace_half_width
 
-    if geometry == GeometryType.DIAGONAL:
+    if geometry_kind == GeometryType.DIAGONAL:
         return m
 
     # X-brace: second diagonal
-    d2 = _point_segment_distance_np(x, y, INNER_LO, INNER_HI, INNER_HI, INNER_LO)
-    return m | (d2 <= BRACE_HALF_WIDTH)
+    d2 = _point_segment_distance_np(
+        x,
+        y,
+        geometry_config.inner_lo,
+        geometry_config.inner_hi,
+        geometry_config.inner_hi,
+        geometry_config.inner_lo,
+    )
+    return m | (d2 <= geometry_config.brace_half_width)
 
 
-def geometry_mask_np(x: np.ndarray, y: np.ndarray, geometry: GeometryType | str) -> np.ndarray:
+def geometry_mask_np(
+    x: np.ndarray,
+    y: np.ndarray,
+    geometry: StructuralProblemConfig | StructuralGeometryConfig | GeometryType | str,
+) -> np.ndarray:
     """Full 2D domain mask for collocation."""
-    g = GeometryType(geometry) if isinstance(geometry, str) else geometry
-    return frame_mask_np(x, y) | brace_band_mask_np(x, y, g)
+    geometry_config = _coerce_geometry_config(geometry)
+    return frame_mask_np(x, y, geometry_config) | brace_band_mask_np(x, y, geometry_config)
 
 
-def geometry_mask_torch(x: torch.Tensor, y: torch.Tensor, geometry: GeometryType | str) -> torch.Tensor:
+def geometry_mask_torch(
+    x: torch.Tensor,
+    y: torch.Tensor,
+    geometry: StructuralProblemConfig | StructuralGeometryConfig | GeometryType | str,
+) -> torch.Tensor:
     """Same as `geometry_mask_np` for torch tensors (differentiable w.r.t. x,y not required)."""
-    g = GeometryType(geometry) if isinstance(geometry, str) else geometry
+    geometry_config = _coerce_geometry_config(geometry)
+    g = GeometryType(geometry_config.geometry)
     outer = (x >= OUTER_LO) & (x <= OUTER_HI) & (y >= OUTER_LO) & (y <= OUTER_HI)
-    hole = (x > INNER_LO) & (x < INNER_HI) & (y > INNER_LO) & (y < INNER_HI)
+    hole = (
+        (x > geometry_config.inner_lo)
+        & (x < geometry_config.inner_hi)
+        & (y > geometry_config.inner_lo)
+        & (y < geometry_config.inner_hi)
+    )
     frame = outer & ~hole
 
     if g == GeometryType.BASE:
         return frame
 
-    d1 = _point_segment_distance_torch(x, y, INNER_LO, INNER_LO, INNER_HI, INNER_HI)
-    band1 = d1 <= BRACE_HALF_WIDTH
+    d1 = _point_segment_distance_torch(
+        x,
+        y,
+        geometry_config.inner_lo,
+        geometry_config.inner_lo,
+        geometry_config.inner_hi,
+        geometry_config.inner_hi,
+    )
+    band1 = d1 <= geometry_config.brace_half_width
     if g == GeometryType.DIAGONAL:
         return frame | band1
-    d2 = _point_segment_distance_torch(x, y, INNER_LO, INNER_HI, INNER_HI, INNER_LO)
-    band2 = d2 <= BRACE_HALF_WIDTH
+    d2 = _point_segment_distance_torch(
+        x,
+        y,
+        geometry_config.inner_lo,
+        geometry_config.inner_hi,
+        geometry_config.inner_hi,
+        geometry_config.inner_lo,
+    )
+    band2 = d2 <= geometry_config.brace_half_width
     return frame | band1 | band2
 
 
@@ -158,26 +227,31 @@ def geometry_mask_torch(x: torch.Tensor, y: torch.Tensor, geometry: GeometryType
 # ---------------------------------------------------------------------------
 
 
-def _hotspots_xy(geometry: GeometryType) -> list[tuple[float, float]]:
+def _hotspots_xy(
+    geometry: StructuralProblemConfig | StructuralGeometryConfig | GeometryType | str,
+) -> list[tuple[float, float]]:
+    geometry_config = _coerce_geometry_config(geometry)
+    geometry_kind = GeometryType(geometry_config.geometry)
     corners = [
-        (INNER_LO, INNER_LO),
-        (INNER_HI, INNER_LO),
-        (INNER_LO, INNER_HI),
-        (INNER_HI, INNER_HI),
+        (geometry_config.inner_lo, geometry_config.inner_lo),
+        (geometry_config.inner_hi, geometry_config.inner_lo),
+        (geometry_config.inner_lo, geometry_config.inner_hi),
+        (geometry_config.inner_hi, geometry_config.inner_hi),
     ]
-    if geometry == GeometryType.BASE:
+    if geometry_kind == GeometryType.BASE:
         return corners
     # Brace endpoints lie on inner corners already; add mid-opening for emphasis
-    mids = [
-        (0.5 * (INNER_LO + INNER_HI), 0.5 * (INNER_LO + INNER_HI)),
-        (0.5 * (INNER_LO + INNER_HI), 0.5 * (INNER_LO + INNER_HI)),
-    ]
-    if geometry == GeometryType.DIAGONAL:
-        return corners + [mids[0]]
-    return corners + list(mids)
+    mid = 0.5 * (geometry_config.inner_lo + geometry_config.inner_hi)
+    if geometry_kind == GeometryType.DIAGONAL:
+        return corners + [(mid, mid)]
+    return corners + [(mid, mid), (mid, mid)]
 
 
-def _min_dist_to_hotspots_np(x: np.ndarray, y: np.ndarray, geometry: GeometryType) -> np.ndarray:
+def _min_dist_to_hotspots_np(
+    x: np.ndarray,
+    y: np.ndarray,
+    geometry: StructuralProblemConfig | StructuralGeometryConfig | GeometryType | str,
+) -> np.ndarray:
     pts = _hotspots_xy(geometry)
     d = np.minimum.reduce(
         [np.sqrt((x - hx) ** 2 + (y - hy) ** 2) for hx, hy in pts]
@@ -187,7 +261,7 @@ def _min_dist_to_hotspots_np(x: np.ndarray, y: np.ndarray, geometry: GeometryTyp
 
 def sample_domain_points(
     n_points: int,
-    geometry: GeometryType | str,
+    geometry: StructuralProblemConfig | StructuralGeometryConfig | GeometryType | str,
     strategy: SamplingStrategy = "uniform",
     *,
     seed: int | None = 0,
@@ -203,15 +277,15 @@ def sample_domain_points(
     if n_points <= 0:
         return np.zeros((0, 2), dtype=np.float32)
 
-    g = GeometryType(geometry) if isinstance(geometry, str) else geometry
+    geometry_config = _coerce_geometry_config(geometry)
     rng = np.random.default_rng(seed)
 
     if strategy == "uniform":
-        return _sample_uniform_filtered(n_points, g, rng)
+        return _sample_uniform_filtered(n_points, geometry_config, rng)
 
     return _sample_adaptive_weighted(
         n_points,
-        g,
+        geometry_config,
         rng,
         pool_factor=pool_factor,
         power=adaptive_power,
@@ -219,7 +293,11 @@ def sample_domain_points(
     )
 
 
-def _sample_uniform_filtered(n: int, geometry: GeometryType, rng: np.random.Generator) -> np.ndarray:
+def _sample_uniform_filtered(
+    n: int,
+    geometry: StructuralGeometryConfig,
+    rng: np.random.Generator,
+) -> np.ndarray:
     """Rejection sampling from uniform [0,1]^2 until n points inside domain."""
     out: list[np.ndarray] = []
     remaining = n
@@ -240,7 +318,7 @@ def _sample_uniform_filtered(n: int, geometry: GeometryType, rng: np.random.Gene
 
 def _sample_adaptive_weighted(
     n: int,
-    geometry: GeometryType,
+    geometry: StructuralGeometryConfig,
     rng: np.random.Generator,
     *,
     pool_factor: int,
@@ -271,7 +349,7 @@ def _sample_adaptive_weighted(
 
 def sample_boundary_points(
     n_per_edge: int,
-    geometry: GeometryType | str,
+    geometry: StructuralProblemConfig | StructuralGeometryConfig | GeometryType | str,
     *,
     seed: int | None = 0,
     include_brace_surface: bool = True,
@@ -282,7 +360,8 @@ def sample_boundary_points(
     Returns ``(x, y, nx, ny)`` each 1D float32 array of length N: coordinates and outward unit normals
     (approximate for outer box / inner hole; brace cut faces use short-segment normals).
     """
-    g = GeometryType(geometry) if isinstance(geometry, str) else geometry
+    geometry_config = _coerce_geometry_config(geometry)
+    g = GeometryType(geometry_config.geometry)
     rng = np.random.default_rng(seed)
     xs: list[float] = []
     ys: list[float] = []
@@ -314,10 +393,10 @@ def sample_boundary_points(
     add_edge_horizontal(OUTER_HI, OUTER_LO, OUTER_HI, 0.0, 1.0)
 
     # Inner hole (normals point into void = outward from solid)
-    add_edge_vertical(INNER_LO, INNER_LO, INNER_HI, 1.0, 0.0)
-    add_edge_vertical(INNER_HI, INNER_LO, INNER_HI, -1.0, 0.0)
-    add_edge_horizontal(INNER_LO, INNER_LO, INNER_HI, 0.0, 1.0)
-    add_edge_horizontal(INNER_HI, INNER_LO, INNER_HI, 0.0, -1.0)
+    add_edge_vertical(geometry_config.inner_lo, geometry_config.inner_lo, geometry_config.inner_hi, 1.0, 0.0)
+    add_edge_vertical(geometry_config.inner_hi, geometry_config.inner_lo, geometry_config.inner_hi, -1.0, 0.0)
+    add_edge_horizontal(geometry_config.inner_lo, geometry_config.inner_lo, geometry_config.inner_hi, 0.0, 1.0)
+    add_edge_horizontal(geometry_config.inner_hi, geometry_config.inner_lo, geometry_config.inner_hi, 0.0, -1.0)
 
     if include_brace_surface and g != GeometryType.BASE:
         # Sample along brace centerlines; normals perpendicular to brace in 2D
@@ -336,9 +415,19 @@ def sample_boundary_points(
                 nxs.append(nx_)
                 nys.append(ny_)
 
-        add_sloped_segment(INNER_LO, INNER_LO, INNER_HI, INNER_HI)
+        add_sloped_segment(
+            geometry_config.inner_lo,
+            geometry_config.inner_lo,
+            geometry_config.inner_hi,
+            geometry_config.inner_hi,
+        )
         if g == GeometryType.X_BRACE:
-            add_sloped_segment(INNER_LO, INNER_HI, INNER_HI, INNER_LO)
+            add_sloped_segment(
+                geometry_config.inner_lo,
+                geometry_config.inner_hi,
+                geometry_config.inner_hi,
+                geometry_config.inner_lo,
+            )
 
     return (
         np.asarray(xs, dtype=np.float32),

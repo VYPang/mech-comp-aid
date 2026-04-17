@@ -98,7 +98,7 @@ def von_mises_field(
 
 def von_mises_grid(
     model: PINN,
-    geometry: str,
+    geometry,
     grid_n: int = 64,
     *,
     mat: MaterialProps | None = None,

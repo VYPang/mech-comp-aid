@@ -18,32 +18,66 @@ export function initializeShellPlots(ids) {
 }
 
 export function renderPointCloudPlot(containerId, payload) {
+  const traces = [];
+  const shapes = [];
+
+  traces.push(
+    {
+      x: payload.domain_points.x,
+      y: payload.domain_points.y,
+      type: "scattergl",
+      mode: "markers",
+      name: "Domain",
+      marker: { size: 5, color: "#22d3ee", opacity: 0.75 },
+    },
+    {
+      x: payload.boundary_points.x,
+      y: payload.boundary_points.y,
+      type: "scattergl",
+      mode: "markers",
+      name: "Boundary",
+      marker: { size: 6, color: "#f59e0b", opacity: 0.95 },
+    },
+  );
+
+  if (payload?.load?.edge === "top") {
+    const xMin = payload.load.patch_center - 0.5 * payload.load.patch_width;
+    const xMax = payload.load.patch_center + 0.5 * payload.load.patch_width;
+
+    shapes.push({
+      type: "line",
+      xref: "x",
+      yref: "y",
+      x0: xMin,
+      x1: xMax,
+      y0: 1,
+      y1: 1,
+      line: { color: "#f97316", width: 5 },
+      layer: "above",
+    });
+
+    traces.push({
+      x: [xMin, xMax],
+      y: [1, 1],
+      type: "scatter",
+      mode: "lines",
+      name: "Top Load Patch",
+      line: { color: "#f97316", width: 5 },
+      hoverinfo: "skip",
+      visible: "legendonly",
+    });
+  }
+
   Plotly.react(
     containerId,
-    [
-      {
-        x: payload.domain_points.x,
-        y: payload.domain_points.y,
-        type: "scattergl",
-        mode: "markers",
-        name: "Domain",
-        marker: { size: 5, color: "#22d3ee", opacity: 0.75 },
-      },
-      {
-        x: payload.boundary_points.x,
-        y: payload.boundary_points.y,
-        type: "scattergl",
-        mode: "markers",
-        name: "Boundary",
-        marker: { size: 6, color: "#f59e0b", opacity: 0.95 },
-      },
-    ],
+    traces,
     {
       ...plotLayoutBase,
-      xaxis: { title: "x", range: [0, 1], gridcolor: "rgba(148, 163, 184, 0.15)" },
+      shapes,
+      xaxis: { title: "x", range: [-0.08, 1.08], gridcolor: "rgba(148, 163, 184, 0.15)" },
       yaxis: {
         title: "y",
-        range: [0, 1],
+        range: [-0.08, 1.08],
         scaleanchor: "x",
         scaleratio: 1,
         gridcolor: "rgba(148, 163, 184, 0.15)",

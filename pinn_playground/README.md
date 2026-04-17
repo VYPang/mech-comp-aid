@@ -207,21 +207,18 @@ Current responsibilities:
 
 This is important for future work:
 
-- left outer edge is clamped:
+- bottom outer edge is clamped:
   - `u = 0`
   - `v = 0`
-- right outer edge is given a prescribed horizontal displacement:
-  - `u = load_displacement`
-  - weak penalty on `v = 0`
-- top edge, bottom edge, inner-hole boundary, and brace surfaces are traction-free
+- a configurable patch on the top outer edge is given a traction load:
+  - `sigma . n = [traction_x, traction_y]`
+- the remaining outer boundary, inner-hole boundary, and brace surfaces are traction-free
 
-This means the current problem is **displacement-controlled**, not explicit traction/force-controlled.
+This means the current PINN teaching case now follows the same support and traction setup as the FEM baseline.
 
 ### Where loading is applied
 
-There is currently **no explicit force term**.
-
-Instead, the structure is driven by a prescribed displacement on the **right outer boundary**, so the frame is effectively pulled from the right side in the positive `x` direction.
+The current PINN setup uses an explicit traction patch on the **top outer boundary** with the same adjustable patch-center, patch-width, and material inputs exposed in the numerical cell.
 
 ### `backend/main.py`
 
