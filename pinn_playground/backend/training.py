@@ -39,7 +39,7 @@ class TrainingConfig(BaseModel):
     sampling_strategy: SamplingLiteral = "uniform"
     n_domain: int = Field(default=900, ge=100, le=12000)
     n_boundary: int = Field(default=160, ge=16, le=4000)
-    epochs: int = Field(default=500, ge=10, le=4000)
+    epochs: int = Field(default=500, ge=10, le=5000)
     normalize_inputs: bool = True
     pde_weight: float = Field(default=1.0, gt=0.0, le=100.0)
     bc_weight: float = Field(default=5.0, gt=0.0, le=100.0)
@@ -110,8 +110,13 @@ async def stream_training_session(
         device = pick_device()
         _seed_everything(config.seed)
         training_material = _training_material(config.problem)
+        traction_scale = max(
+            abs(float(config.problem.load.traction_x)),
+            abs(float(config.problem.load.traction_y)),
+            1e-12,
+        )
         physical_material = MaterialProps(
-            young=config.problem.material.young,
+            young=traction_scale,
             poisson=config.problem.material.poisson,
         )
         model = PINN(
@@ -120,6 +125,11 @@ async def stream_training_session(
             normalize_inputs=config.normalize_inputs,
         ).to(device)
         optimizer = torch.optim.Adam(model.parameters(), lr=config.learning_rate)
+        scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
+            optimizer,
+            T_max=max(config.epochs, 1),
+            eta_min=max(config.learning_rate * 0.01, 1e-6),
+        )
 
         await websocket.send_json(
             {
@@ -182,6 +192,7 @@ async def stream_training_session(
             total_loss = config.pde_weight * pde_loss + config.bc_weight * bc_loss
             total_loss.backward()
             optimizer.step()
+            scheduler.step()
 
             total_value = float(total_loss.detach().cpu().item())
             pde_value = float(pde_loss.detach().cpu().item())
@@ -261,7 +272,11 @@ def boundary_condition_loss(
     free_mask = ~(bottom_mask | load_mask)
 
     zero = torch.zeros(1, dtype=torch.float32, device=device)
-    traction_scale = max(float(problem.material.young), 1.0)
+    traction_scale = max(
+        abs(float(problem.load.traction_x)),
+        abs(float(problem.load.traction_y)),
+        1e-12,
+    )
     traction_x = torch.full(
         (1,),
         float(problem.load.traction_x) / traction_scale,

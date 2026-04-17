@@ -1,5 +1,5 @@
-import { fetchFemPreview, fetchFemSolve } from "./api.js?v=checkpoint-shell-6";
-import { renderFemBoundaryPlot, renderFemDeformedPlot, renderFemMeshPlot, renderNotePlot, renderStressHeatmap } from "./plots.js?v=checkpoint-shell-6";
+import { fetchFemPreview, fetchFemSolve } from "./api.js?v=checkpoint-shell-7";
+import { renderFemBoundaryPlot, renderFemDeformedPlot, renderFemMeshPlot, renderNotePlot, renderStressHeatmap } from "./plots.js?v=checkpoint-shell-7";
 
 /** Defaults when no saved state (e.g. first visit or after reset). */
 const DEFAULT_FEM_CONTROLS = {

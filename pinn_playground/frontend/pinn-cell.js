@@ -1,5 +1,5 @@
-import { createPinnSocket, fetchPinnPreview } from "./api.js?v=checkpoint-shell-6";
-import { renderLossPlot, renderNotePlot, renderPointCloudPlot, renderStressHeatmap } from "./plots.js?v=checkpoint-shell-6";
+import { createPinnSocket, fetchPinnPreview } from "./api.js?v=checkpoint-shell-7";
+import { renderLossPlot, renderNotePlot, renderPointCloudPlot, renderStressHeatmap } from "./plots.js?v=checkpoint-shell-7";
 
 /** Defaults when no saved state (e.g. first visit or after reset). */
 const DEFAULT_PINN_CONTROLS = {
@@ -197,7 +197,7 @@ export function createPinnCell({ ui, runtimeState, shell }) {
               <label for="pinn-epochs">Epochs</label>
               <span id="pinn-epochs-value" class="range-value"></span>
             </div>
-            <input id="pinn-epochs" type="range" min="50" max="1200" step="50" value="${v.epochs}" class="field-range" />
+            <input id="pinn-epochs" type="range" min="50" max="5000" step="50" value="${v.epochs}" class="field-range" />
             <p class="field-help">Longer runs usually produce smoother loss and stress histories.</p>
           </div>
           <div class="control-card flex items-center justify-between gap-4">

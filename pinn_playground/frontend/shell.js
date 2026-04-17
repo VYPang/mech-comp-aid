@@ -1,7 +1,7 @@
-import { canAdvanceCheckpoint, getCompletionMessage } from "./checkpoint-rules.js?v=checkpoint-shell-6";
-import { createNumericalCell } from "./numerical-cell.js?v=checkpoint-shell-6";
-import { createPinnCell } from "./pinn-cell.js?v=checkpoint-shell-6";
-import { initializeShellPlots } from "./plots.js?v=checkpoint-shell-6";
+import { canAdvanceCheckpoint, getCompletionMessage } from "./checkpoint-rules.js?v=checkpoint-shell-7";
+import { createNumericalCell } from "./numerical-cell.js?v=checkpoint-shell-7";
+import { createPinnCell } from "./pinn-cell.js?v=checkpoint-shell-7";
+import { initializeShellPlots } from "./plots.js?v=checkpoint-shell-7";
 
 export function createAppShell({ ui, progressStore }) {
   const runtimeState = {
