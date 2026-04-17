@@ -1,5 +1,5 @@
-import { createPinnSocket, fetchPinnPreview } from "./api.js?v=checkpoint-shell-7";
-import { renderLossPlot, renderNotePlot, renderPointCloudPlot, renderStressHeatmap } from "./plots.js?v=checkpoint-shell-7";
+import { createPinnSocket, fetchPinnPreview } from "./api.js?v=checkpoint-shell-8";
+import { renderLossPlot, renderNotePlot, renderPointCloudPlot, renderStressHeatmap, renderErrorHeatmap } from "./plots.js?v=checkpoint-shell-8";
 
 /** Defaults when no saved state (e.g. first visit or after reset). */
 const DEFAULT_PINN_CONTROLS = {
@@ -37,6 +37,8 @@ export function createPinnCell({ ui, runtimeState, shell }) {
     latestMetrics: null,
     latestPreview: null,
     controls: null,
+    femBaseline: null,
+    activeBottomTab: "training-curve",
   };
 
   function getMergedPinnControls() {
@@ -91,6 +93,24 @@ export function createPinnCell({ ui, runtimeState, shell }) {
     }
     state.currentCheckpointId = null;
     closeSocket("Checkpoint changed");
+    _destroyBottomTabs();
+  }
+
+  function _destroyBottomTabs() {
+    const tabBar = document.getElementById("pinn-tab-loss-plot");
+    if (!tabBar) return; // tabs were never injected
+    // Purge any Plotly charts living in the sub-containers so Plotly's
+    // internal registry doesn't hold stale references.
+    for (const id of ["pinn-tab-loss-plot", "pinn-baseline-plot", "pinn-error-plot"]) {
+      const el = document.getElementById(id);
+      if (el && window.Plotly) {
+        try { Plotly.purge(el); } catch (_) {}
+      }
+    }
+    // Wipe the injected tab structure so the shared ui.bottomPlot container
+    // is completely empty and ready for the next cell to use.
+    const container = document.getElementById(ui.bottomPlot);
+    if (container) container.innerHTML = "";
   }
 
   function renderControls(checkpoint) {
@@ -463,6 +483,7 @@ export function createPinnCell({ ui, runtimeState, shell }) {
   function renderPinnViews() {
     if (state.latestPreview) {
       renderPointCloudPlot(ui.leftPlot, state.latestPreview);
+      const activeTab = state.activeBottomTab;
       shell.setPlotMeta({
         leftTitle: "Collocation Points",
         leftSummary: `${state.latestPreview.counts.n_domain} domain, ${state.latestPreview.counts.n_boundary} boundary`,
@@ -472,7 +493,9 @@ export function createPinnCell({ ui, runtimeState, shell }) {
           : state.currentCheckpointId === "pinn-train"
             ? "Training not started yet"
             : "Appears during training",
-        bottomTitle: state.currentCheckpointId === "pinn-train" ? "Training Curves" : "Preview Notes",
+        bottomTitle: state.currentCheckpointId === "pinn-train"
+          ? (activeTab === "compare-fem" ? "Compare with Numerical" : "Training Curves")
+          : "Preview Notes",
         bottomSummary: state.currentCheckpointId === "pinn-train"
           ? (state.latestMetrics ? `Epoch ${state.latestMetrics.epoch}` : "Waiting for a training run")
           : "Inspect the collocation design first",
@@ -491,13 +514,7 @@ export function createPinnCell({ ui, runtimeState, shell }) {
           "Start a training run to populate the live stress heatmap.",
         ]);
       }
-      if (state.losses.epoch.length === 0) {
-        renderNotePlot(ui.bottomPlot, "Training Curves", [
-          "A completed or in-progress training run will populate this plot.",
-        ]);
-      } else {
-        renderLossPlot(ui.bottomPlot, state.losses);
-      }
+      _renderBottomTabs();
       return;
     }
 
@@ -509,6 +526,98 @@ export function createPinnCell({ ui, runtimeState, shell }) {
       "Collocation preview is live.",
       "Training controls unlock in the next PINN checkpoint.",
     ]);
+  }
+
+  function _ensureBottomTabs() {
+    if (document.getElementById("pinn-tab-loss-plot")) return;
+    const container = document.getElementById(ui.bottomPlot);
+    if (!container) return;
+    container.innerHTML = `
+      <div style="display:flex; flex-direction:column; height:100%; min-height:0;">
+        <div id="pinn-tab-bar" style="
+          display:flex; gap:0; flex-shrink:0;
+          border-bottom: 1px solid rgba(148,163,184,0.2);
+          margin-bottom:4px;
+        ">
+          <button id="pinn-tab-btn-training-curve" type="button" style="
+            padding:6px 16px; font-size:0.8rem; font-weight:600;
+            border:none; border-radius:6px 6px 0 0; cursor:pointer;
+            transition:background 0.15s, color 0.15s;
+          ">Training Curve</button>
+          <button id="pinn-tab-btn-compare-fem" type="button" style="
+            padding:6px 16px; font-size:0.8rem; font-weight:600;
+            border:none; border-radius:6px 6px 0 0; cursor:pointer;
+            transition:background 0.15s, color 0.15s;
+          ">Compare with Numerical</button>
+        </div>
+        <div id="pinn-tab-loss-plot" style="flex:1; min-height:0;"></div>
+        <div id="pinn-tab-compare-content" style="
+          display:none; flex:1; min-height:0; flex-direction:row;
+        ">
+          <div id="pinn-baseline-plot" style="flex:1; min-height:0; min-width:0;"></div>
+          <div id="pinn-error-plot"    style="flex:1; min-height:0; min-width:0;"></div>
+        </div>
+      </div>`;
+    document.getElementById("pinn-tab-btn-training-curve").addEventListener("click", () => {
+      state.activeBottomTab = "training-curve";
+      _renderBottomTabs();
+    });
+    document.getElementById("pinn-tab-btn-compare-fem").addEventListener("click", () => {
+      state.activeBottomTab = "compare-fem";
+      _renderBottomTabs();
+    });
+  }
+
+  function _updateTabButtons() {
+    const btnLoss    = document.getElementById("pinn-tab-btn-training-curve");
+    const btnCompare = document.getElementById("pinn-tab-btn-compare-fem");
+    if (!btnLoss || !btnCompare) return;
+    const baseStyle = "padding:6px 16px; font-size:0.8rem; font-weight:600; border:none; border-radius:6px 6px 0 0; cursor:pointer; transition:background 0.15s, color 0.15s;";
+    const activeStyle = baseStyle + "background:rgba(34,211,238,0.15); color:#22d3ee;";
+    const idleStyle   = baseStyle + "background:transparent; color:#94a3b8;";
+    btnLoss.setAttribute("style",    state.activeBottomTab === "training-curve" ? activeStyle : idleStyle);
+    btnCompare.setAttribute("style", state.activeBottomTab === "compare-fem"    ? activeStyle : idleStyle);
+  }
+
+  function _renderBottomTabs() {
+    _ensureBottomTabs();
+    _updateTabButtons();
+
+    const lossPane    = document.getElementById("pinn-tab-loss-plot");
+    const comparePane = document.getElementById("pinn-tab-compare-content");
+    if (!lossPane || !comparePane) return;
+
+    if (state.activeBottomTab === "compare-fem") {
+      lossPane.style.display    = "none";
+      comparePane.style.display = "flex";
+      // Left: FEM baseline
+      if (state.femBaseline) {
+        renderStressHeatmap("pinn-baseline-plot", state.femBaseline);
+      } else {
+        renderNotePlot("pinn-baseline-plot", "FEM Baseline", [
+          "Running FEM at highest resolution\u2026",
+          "The baseline will appear here shortly after training starts.",
+        ]);
+      }
+      // Right: absolute error (updates every update_every epochs)
+      if (state.latestMetrics?.error_grid) {
+        renderErrorHeatmap("pinn-error-plot", state.latestMetrics.error_grid);
+      } else {
+        renderNotePlot("pinn-error-plot", "Absolute Error", [
+          "Error map appears here once PINN metrics and FEM baseline are both available.",
+        ]);
+      }
+    } else {
+      lossPane.style.display    = "flex";
+      comparePane.style.display = "none";
+      if (state.losses.epoch.length === 0) {
+        renderNotePlot("pinn-tab-loss-plot", "Training Curves", [
+          "A completed or in-progress training run will populate this plot.",
+        ]);
+      } else {
+        renderLossPlot("pinn-tab-loss-plot", state.losses);
+      }
+    }
   }
 
   function resetLosses() {
@@ -537,6 +646,7 @@ export function createPinnCell({ ui, runtimeState, shell }) {
     state.isPreviewing = false;
     resetLosses();
     state.latestMetrics = null;
+    state.femBaseline = null;
     renderPinnViews();
     setTrainingState(true);
     shell.setStatus("Connecting to PINN training", {
@@ -571,6 +681,11 @@ export function createPinnCell({ ui, runtimeState, shell }) {
         runtimeState.pinn.latestPreview = message;
         renderPinnViews();
         updateGuide();
+        return;
+      }
+      if (message.type === "fem_baseline") {
+        state.femBaseline = message.stress_grid;
+        renderPinnViews();
         return;
       }
       if (message.type === "metrics") {

@@ -24,7 +24,7 @@ from pinn_playground.backend.physics_env import (
     strains_from_displacement,
 )
 from pinn_playground.backend.pinn_model import PINN, count_parameters, von_mises_grid
-from pinn_playground.backend.problem_definition import StructuralProblemConfig
+from pinn_playground.backend.problem_definition import FEMProblemConfig, FEMMeshConfig, StructuralProblemConfig
 
 
 SamplingLiteral = Literal["uniform", "adaptive"]
@@ -143,6 +143,19 @@ async def stream_training_session(
         )
         await websocket.send_json(build_preview_payload(config))
 
+        # Run FEM baseline at max resolution (off-thread; never blocks the training loop).
+        fem_baseline_z: np.ndarray | None = None
+        fem_baseline_result = await asyncio.to_thread(_build_fem_baseline, config, config.stress_grid_n)
+        if fem_baseline_result is not None:
+            fem_baseline_grid, fem_baseline_z = fem_baseline_result
+            await websocket.send_json(
+                {
+                    "type": "fem_baseline",
+                    "physics_case_id": config.physics_case_id(),
+                    "stress_grid": fem_baseline_grid,
+                }
+            )
+
         domain_xy = sample_domain_points(
             config.n_domain,
             config.problem,
@@ -208,6 +221,10 @@ async def stream_training_session(
                     mat=physical_material,
                     device=device,
                 )
+                error_grid: dict[str, Any] | None = None
+                if fem_baseline_z is not None:
+                    error_z = np.abs(vm - fem_baseline_z).astype(np.float32)
+                    error_grid = _serialize_grid(xg, yg, error_z)
                 await websocket.send_json(
                     {
                         "type": "metrics",
@@ -218,6 +235,7 @@ async def stream_training_session(
                         "pde_loss": pde_value,
                         "bc_loss": bc_value,
                         "stress_grid": _serialize_grid(xg, yg, vm),
+                        "error_grid": error_grid,
                         "history_tail": _history_tail(total_history),
                     }
                 )
@@ -298,6 +316,56 @@ def boundary_condition_loss(
 
 def _training_material(problem: StructuralProblemConfig) -> MaterialProps:
     return MaterialProps(young=1.0, poisson=problem.material.poisson)
+
+
+def _build_fem_baseline(
+    config: "TrainingConfig",
+    grid_n: int,
+) -> "tuple[dict[str, Any], np.ndarray] | None":
+    """
+    Run FEM at maximum mesh resolution using the same geometry/load as the PINN.
+
+    Returns (serialised grid dict, z_np float32 array) so the caller can both
+    forward-send the grid to the browser and compute element-wise errors.
+    Returns None on any exception so a FEM failure never kills the PINN run.
+    """
+    try:
+        from pinn_playground.backend.fem_solver import solve_fem_problem  # local import avoids circular dep
+
+        fem_config = FEMProblemConfig(
+            geometry=config.problem.geometry.model_dump(),
+            material=config.problem.material.model_dump(),
+            support=config.problem.support.model_dump(),
+            load=config.problem.load.model_dump(),
+            mesh=FEMMeshConfig(n_cells=180),  # maximum allowed mesh resolution
+        )
+        result = solve_fem_problem(fem_config, grid_n=grid_n)
+        grid = result["stress_grid"]
+        z_np = np.array(
+            [[np.nan if v is None else float(v) for v in row] for row in grid["z"]],
+            dtype=np.float32,
+        )
+        # Rescale from physical Pa to traction units so it's directly comparable
+        # with the PINN output (which uses traction_scale as its Young's modulus).
+        traction_scale = max(
+            abs(float(config.problem.load.traction_x)),
+            abs(float(config.problem.load.traction_y)),
+            1e-12,
+        )
+        young_physical = float(config.problem.material.young)
+        if young_physical > 0:
+            z_np = z_np * (traction_scale / young_physical)
+        grid_rescaled: dict[str, Any] = {
+            "x": grid["x"],
+            "y": grid["y"],
+            "z": [
+                [None if not np.isfinite(v) else float(v) for v in row]
+                for row in z_np.tolist()
+            ],
+        }
+        return grid_rescaled, z_np
+    except Exception:
+        return None
 
 
 def _masked_mse(values: torch.Tensor, target: torch.Tensor, mask: torch.Tensor) -> torch.Tensor:

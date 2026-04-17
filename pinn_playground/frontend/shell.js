@@ -1,7 +1,7 @@
-import { canAdvanceCheckpoint, getCompletionMessage } from "./checkpoint-rules.js?v=checkpoint-shell-7";
-import { createNumericalCell } from "./numerical-cell.js?v=checkpoint-shell-7";
-import { createPinnCell } from "./pinn-cell.js?v=checkpoint-shell-7";
-import { initializeShellPlots } from "./plots.js?v=checkpoint-shell-7";
+import { canAdvanceCheckpoint, getCompletionMessage } from "./checkpoint-rules.js?v=checkpoint-shell-8";
+import { createNumericalCell } from "./numerical-cell.js?v=checkpoint-shell-8";
+import { createPinnCell } from "./pinn-cell.js?v=checkpoint-shell-8";
+import { initializeShellPlots } from "./plots.js?v=checkpoint-shell-8";
 
 export function createAppShell({ ui, progressStore }) {
   const runtimeState = {
@@ -38,8 +38,12 @@ export function createAppShell({ ui, progressStore }) {
       ui.leftPlotSummary.textContent = meta.leftSummary;
       ui.rightPlotTitle.textContent = meta.rightTitle;
       ui.rightPlotSummary.textContent = meta.rightSummary;
-      ui.bottomPlotTitle.textContent = meta.bottomTitle;
-      ui.bottomPlotSummary.textContent = meta.bottomSummary;
+      if (meta.bottomTitle !== undefined) ui.bottomPlotTitle.textContent = meta.bottomTitle;
+      if (meta.bottomSummary !== undefined) ui.bottomPlotSummary.textContent = meta.bottomSummary;
+    },
+    setBottomPanelVisible(visible) {
+      const panel = document.getElementById("bottom-panel");
+      if (panel) panel.style.display = visible ? "" : "none";
     },
     refreshProgress() {
       refreshChrome();

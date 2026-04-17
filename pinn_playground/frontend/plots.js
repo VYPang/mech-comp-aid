@@ -117,6 +117,33 @@ export function renderStressHeatmap(containerId, grid) {
   );
 }
 
+export function renderErrorHeatmap(containerId, grid) {
+  Plotly.react(
+    containerId,
+    [
+      {
+        z: grid.z,
+        x: grid.x,
+        y: grid.y,
+        type: "heatmap",
+        colorscale: "Reds",
+        colorbar: { title: "Abs. Error" },
+      },
+    ],
+    {
+      ...plotLayoutBase,
+      xaxis: { title: "x", gridcolor: "rgba(148, 163, 184, 0.15)" },
+      yaxis: {
+        title: "y",
+        scaleanchor: "x",
+        scaleratio: 1,
+        gridcolor: "rgba(148, 163, 184, 0.15)",
+      },
+    },
+    { responsive: true },
+  );
+}
+
 export function renderLossPlot(containerId, losses) {
   Plotly.react(
     containerId,

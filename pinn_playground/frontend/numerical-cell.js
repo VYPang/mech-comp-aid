@@ -1,5 +1,5 @@
-import { fetchFemPreview, fetchFemSolve } from "./api.js?v=checkpoint-shell-7";
-import { renderFemBoundaryPlot, renderFemDeformedPlot, renderFemMeshPlot, renderNotePlot, renderStressHeatmap } from "./plots.js?v=checkpoint-shell-7";
+import { fetchFemPreview, fetchFemSolve } from "./api.js?v=checkpoint-shell-8";
+import { renderFemBoundaryPlot, renderFemDeformedPlot, renderFemMeshPlot, renderNotePlot, renderStressHeatmap } from "./plots.js?v=checkpoint-shell-8";
 
 /** Defaults when no saved state (e.g. first visit or after reset). */
 const DEFAULT_FEM_CONTROLS = {
@@ -49,6 +49,7 @@ export function createNumericalCell({ ui, runtimeState, shell }) {
 
   function enter(checkpoint) {
     state.currentCheckpointId = checkpoint.id;
+    shell.setBottomPanelVisible(false);
     renderControls(checkpoint);
     if (!state.latestPreview) {
       schedulePreview();
@@ -64,6 +65,7 @@ export function createNumericalCell({ ui, runtimeState, shell }) {
       state.previewTimer = null;
     }
     state.currentCheckpointId = null;
+    shell.setBottomPanelVisible(true);
   }
 
   function renderControls(checkpoint) {
@@ -158,6 +160,7 @@ export function createNumericalCell({ ui, runtimeState, shell }) {
                 <button id="fem-solve-button" type="button" class="w-full rounded-xl bg-cyan-500 px-4 py-3 font-semibold text-slate-950 transition hover:bg-cyan-400">
                   Run FEM Solve
                 </button>
+                <div id="fem-summary-table"></div>
               </div>
             </details>
           `
@@ -296,7 +299,6 @@ export function createNumericalCell({ ui, runtimeState, shell }) {
           items: [`Check the current inputs and retry the preview.`, String(error)],
         },
       ]);
-      renderNotePlot(ui.bottomPlot, "Preview Error", [String(error)]);
     }
   }
 
@@ -359,7 +361,7 @@ export function createNumericalCell({ ui, runtimeState, shell }) {
           items: ["Check the current setup, then rerun the solve.", String(error)],
         },
       ]);
-      renderNotePlot(ui.bottomPlot, "Solve Error", [String(error)]);
+      _renderSummaryTable([["Error", String(error)]]);
     } finally {
       state.isSolving = false;
       if (state.controls?.solveButton) {
@@ -385,19 +387,11 @@ export function createNumericalCell({ ui, runtimeState, shell }) {
     if (state.latestPreview) {
       renderFemMeshPlot(ui.leftPlot, state.latestPreview);
       renderFemBoundaryPlot(ui.rightPlot, state.latestPreview);
-      renderNotePlot(ui.bottomPlot, "Numerical Preview Summary", [
-        `Case ID: ${state.latestPreview.case_id}`,
-        `Nodes: ${state.latestPreview.mesh.counts.n_nodes}`,
-        `Elements: ${state.latestPreview.mesh.counts.n_elements}`,
-        `Boundary facets: ${state.latestPreview.mesh.counts.n_boundary_facets}`,
-      ]);
       shell.setPlotMeta({
         leftTitle: "Structured FEM Mesh",
         leftSummary: `${state.latestPreview.mesh.counts.n_elements} elements`,
         rightTitle: "Boundary Conditions",
         rightSummary: "Bottom support and top load patch",
-        bottomTitle: "Checkpoint Notes",
-        bottomSummary: `Case ${state.latestPreview.case_id}`,
       });
     } else {
       renderNotePlot(ui.leftPlot, "Numerical preview", [
@@ -405,9 +399,6 @@ export function createNumericalCell({ ui, runtimeState, shell }) {
       ]);
       renderNotePlot(ui.rightPlot, "Boundary conditions", [
         "The fixed bottom edge and top load patch will be highlighted there.",
-      ]);
-      renderNotePlot(ui.bottomPlot, "Preview summary", [
-        "Mesh counts and boundary metadata will appear here.",
       ]);
     }
     shell.setControlsSummary("Use this preview to verify the support, load patch, and geometry before solving.");
@@ -417,19 +408,21 @@ export function createNumericalCell({ ui, runtimeState, shell }) {
     if (state.latestSolve) {
       renderFemDeformedPlot(ui.leftPlot, state.latestSolve);
       renderStressHeatmap(ui.rightPlot, state.latestSolve.stress_grid);
-      renderNotePlot(ui.bottomPlot, "FEM Solve Summary", [
-        `Solve time: ${state.latestSolve.summary.solve_time_ms.toFixed(3)} ms`,
-        `Max displacement: ${formatNumber(state.latestSolve.summary.max_displacement)}`,
-        `Max von Mises: ${formatNumber(state.latestSolve.summary.max_von_mises)}`,
-        `Deformation scale: ${formatNumber(state.latestSolve.summary.deformation_scale)}`,
+      _renderSummaryTable([
+        ["Solve time",        `${state.latestSolve.summary.solve_time_ms.toFixed(3)} ms`],
+        ["Max displacement",  formatNumber(state.latestSolve.summary.max_displacement)],
+        ["Max von Mises",     formatNumber(state.latestSolve.summary.max_von_mises)],
+        ["Deformation scale", formatNumber(state.latestSolve.summary.deformation_scale)],
+        ["Load facets",       String(state.latestSolve.summary.n_load_facets)],
+        ["Max |σ_xx|",        formatNumber(state.latestSolve.summary.max_abs_sxx)],
+        ["Max |σ_yy|",        formatNumber(state.latestSolve.summary.max_abs_syy)],
+        ["Max |τ_xy|",        formatNumber(state.latestSolve.summary.max_abs_txy)],
       ]);
       shell.setPlotMeta({
         leftTitle: "Deformed Mesh",
         leftSummary: `Scale ${formatNumber(state.latestSolve.summary.deformation_scale)}`,
         rightTitle: "Von Mises Stress",
         rightSummary: `Max ${formatNumber(state.latestSolve.summary.max_von_mises)}`,
-        bottomTitle: "FEM Solve Summary",
-        bottomSummary: `${state.latestSolve.summary.solve_time_ms.toFixed(3)} ms`,
       });
       return;
     }
@@ -446,19 +439,12 @@ export function createNumericalCell({ ui, runtimeState, shell }) {
         "The current support and load patch will appear here.",
       ]);
     }
-    renderNotePlot(ui.bottomPlot, "Run FEM Solve", [
-      solveIsStale
-        ? "The previous solve is out of date because the setup changed. Run the solve again."
-        : "Click the solve button to compute deformation and von Mises stress for the current setup.",
-      "This checkpoint completes automatically once the solve succeeds.",
-    ]);
+    _renderSummaryTable([]);
     shell.setPlotMeta({
       leftTitle: "Current Mesh",
       leftSummary: state.latestPreview ? `${state.latestPreview.mesh.counts.n_elements} elements` : "Preview not generated yet",
       rightTitle: "Current Boundary Conditions",
       rightSummary: solveIsStale ? "Preview changed since the last solve" : "Ready for solve",
-      bottomTitle: "Solve Checkpoint",
-      bottomSummary: solveIsStale ? "Solve is stale" : "Waiting for FEM solve",
     });
   }
 
@@ -466,19 +452,19 @@ export function createNumericalCell({ ui, runtimeState, shell }) {
     if (state.latestSolve) {
       renderFemDeformedPlot(ui.leftPlot, state.latestSolve);
       renderStressHeatmap(ui.rightPlot, state.latestSolve.stress_grid);
-      renderNotePlot(ui.bottomPlot, "Numerical Reflection", [
-        `Case ID: ${state.latestSolve.case_id}`,
-        `Load facets: ${state.latestSolve.summary.n_load_facets}`,
-        `Mean von Mises: ${formatNumber(state.latestSolve.summary.mean_von_mises)}`,
-        "Use this result as the trust baseline before you continue into the PINN cell.",
+      _renderSummaryTable([
+        ["Case ID",          state.latestSolve.case_id],
+        ["Max von Mises",    formatNumber(state.latestSolve.summary.max_von_mises)],
+        ["Mean von Mises",   formatNumber(state.latestSolve.summary.mean_von_mises)],
+        ["Max displacement", formatNumber(state.latestSolve.summary.max_displacement)],
+        ["Load facets",      String(state.latestSolve.summary.n_load_facets)],
+        ["Solve time",       `${state.latestSolve.summary.solve_time_ms.toFixed(3)} ms`],
       ]);
       shell.setPlotMeta({
         leftTitle: "Deformed Mesh",
         leftSummary: `Scale ${formatNumber(state.latestSolve.summary.deformation_scale)}`,
         rightTitle: "Von Mises Stress",
         rightSummary: `Mean ${formatNumber(state.latestSolve.summary.mean_von_mises)}`,
-        bottomTitle: "Numerical Reflection",
-        bottomSummary: "Baseline ready for comparison",
       });
       return;
     }
@@ -567,6 +553,28 @@ export function createNumericalCell({ ui, runtimeState, shell }) {
       { title: "What to try", items: tryNext.slice(0, 2) },
       { title: "Why it matters", items: why.slice(0, 2) },
     ]);
+  }
+
+  function _renderSummaryTable(rows) {
+    const el = document.getElementById("fem-summary-table");
+    if (!el) return;
+    if (!rows.length) {
+      el.innerHTML = "";
+      return;
+    }
+    el.innerHTML = `
+      <table style="
+        width:100%; border-collapse:collapse; margin-top:12px;
+        font-size:0.78rem; color:#cbd5e1;
+      ">
+        <tbody>
+          ${rows.map(([label, value]) => `
+            <tr style="border-top:1px solid rgba(148,163,184,0.15);">
+              <td style="padding:5px 8px; color:#94a3b8; font-weight:500; white-space:nowrap;">${label}</td>
+              <td style="padding:5px 8px; text-align:right; font-family:monospace; color:#e2e8f0;">${value}</td>
+            </tr>`).join("")}
+        </tbody>
+      </table>`;
   }
 
   return {
