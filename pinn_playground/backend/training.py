@@ -16,6 +16,8 @@ from pinn_playground.backend.physics_env import (
     MaterialProps,
     OUTER_HI,
     OUTER_LO,
+    equilibrium_residuals,
+    geometry_mask_np,
     numpy_to_domain_tensor,
     pde_loss_domain,
     sample_boundary_points,
@@ -44,11 +46,24 @@ class TrainingConfig(BaseModel):
     pde_weight: float = Field(default=1.0, gt=0.0, le=100.0)
     bc_weight: float = Field(default=5.0, gt=0.0, le=100.0)
     learning_rate: float = Field(default=1e-3, gt=0.0, le=1.0)
-    hidden_dim: int = Field(default=48, ge=8, le=256)
-    n_hidden_layers: int = Field(default=4, ge=1, le=8)
+    hidden_dim: int = Field(default=96, ge=8, le=256)
+    n_hidden_layers: int = Field(default=5, ge=1, le=8)
     seed: int = 0
-    stress_grid_n: int = Field(default=40, ge=16, le=80)
+    stress_grid_n: int = Field(default=60, ge=16, le=120)
     update_every: int = Field(default=50, ge=1, le=500)
+    # Residual-adaptive resampling (RAD): every K epochs, replace domain points
+    # with new ones drawn with probability proportional to PDE residual.
+    # Set to 0 to disable.
+    residual_resample_every: int = Field(default=200, ge=0, le=5000)
+    residual_resample_power: float = Field(default=1.0, ge=0.0, le=4.0)
+    residual_resample_uniform_fraction: float = Field(default=0.3, ge=0.0, le=1.0)
+    residual_resample_pool_factor: int = Field(default=4, ge=2, le=16)
+    # Random Fourier feature input encoding (Tancik et al. 2020). Lifts the
+    # network past the smooth-MLP spectral bias so it can represent sharp
+    # corner stress concentrations.
+    fourier_features: bool = False
+    fourier_num_features: int = Field(default=16, ge=4, le=256)
+    fourier_sigma: float = Field(default=1.0, gt=0.0, le=20.0)
 
     def physics_case_id(self) -> str:
         return self.problem.case_id()
@@ -123,6 +138,10 @@ async def stream_training_session(
             hidden_dim=config.hidden_dim,
             n_hidden_layers=config.n_hidden_layers,
             normalize_inputs=config.normalize_inputs,
+            fourier_features=config.fourier_features,
+            fourier_num_features=config.fourier_num_features,
+            fourier_sigma=config.fourier_sigma,
+            fourier_seed=config.seed,
         ).to(device)
         optimizer = torch.optim.Adam(model.parameters(), lr=config.learning_rate)
         scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
@@ -212,6 +231,40 @@ async def stream_training_session(
             bc_value = float(bc_loss.detach().cpu().item())
             total_history.append(total_value)
             best_total = min(best_total, total_value)
+
+            # Residual-adaptive resampling: every K epochs, draw a fresh candidate
+            # pool, rank by PDE residual, and replace `domain_xy` with points where
+            # the model is currently struggling. Mixed with a uniform fraction so
+            # the network keeps seeing the full domain. Only active when the user
+            # has selected the adaptive sampling strategy.
+            if (
+                config.sampling_strategy == "adaptive"
+                and config.residual_resample_every > 0
+                and epoch % config.residual_resample_every == 0
+                and epoch < config.epochs
+            ):
+                domain_xy = _residual_adaptive_resample(
+                    model=model,
+                    geometry=config.problem,
+                    material=training_material,
+                    n_points=config.n_domain,
+                    device=device,
+                    seed=config.seed + epoch,
+                    pool_factor=config.residual_resample_pool_factor,
+                    power=config.residual_resample_power,
+                    uniform_fraction=config.residual_resample_uniform_fraction,
+                )
+                await websocket.send_json(
+                    {
+                        "type": "resample",
+                        "epoch": epoch,
+                        "n_points": int(domain_xy.shape[0]),
+                        "domain_points": {
+                            "x": _serialize_vector(domain_xy[:, 0]),
+                            "y": _serialize_vector(domain_xy[:, 1]),
+                        },
+                    }
+                )
 
             if epoch == 1 or epoch % config.update_every == 0 or epoch == config.epochs:
                 xg, yg, vm = von_mises_grid(
@@ -345,25 +398,11 @@ def _build_fem_baseline(
             [[np.nan if v is None else float(v) for v in row] for row in grid["z"]],
             dtype=np.float32,
         )
-        # Rescale from physical Pa to traction units so it's directly comparable
-        # with the PINN output (which uses traction_scale as its Young's modulus).
-        traction_scale = max(
-            abs(float(config.problem.load.traction_x)),
-            abs(float(config.problem.load.traction_y)),
-            1e-12,
-        )
-        young_physical = float(config.problem.material.young)
-        if young_physical > 0:
-            z_np = z_np * (traction_scale / young_physical)
-        grid_rescaled: dict[str, Any] = {
-            "x": grid["x"],
-            "y": grid["y"],
-            "z": [
-                [None if not np.isfinite(v) else float(v) for v in row]
-                for row in z_np.tolist()
-            ],
-        }
-        return grid_rescaled, z_np
+        # No rescaling needed: PINN display uses physical_material.young = traction_scale,
+        # which maps training-level O(1) stresses back to the physical traction magnitude.
+        # FEM solves with the same traction BCs, and in linear elasticity the stress
+        # field is independent of E, so both outputs are already in the same units.
+        return grid, z_np
     except Exception:
         return None
 
@@ -373,6 +412,106 @@ def _masked_mse(values: torch.Tensor, target: torch.Tensor, mask: torch.Tensor) 
         return torch.zeros((), dtype=values.dtype, device=values.device)
     selected = values[mask]
     return torch.mean((selected - target) ** 2)
+
+
+def _residual_adaptive_resample(
+    *,
+    model: PINN,
+    geometry: StructuralProblemConfig,
+    material: MaterialProps,
+    n_points: int,
+    device: torch.device,
+    seed: int,
+    pool_factor: int,
+    power: float,
+    uniform_fraction: float,
+) -> np.ndarray:
+    """
+    Residual-adaptive density (RAD) resampling.
+
+    Draws a candidate pool that is `pool_factor` times larger than `n_points`,
+    evaluates the squared PDE residual at every candidate, and samples
+    `n_points` without replacement with probability proportional to
+    ``residual ** power``. A `uniform_fraction` of the output is drawn
+    uniformly so the network keeps seeing the full domain.
+    """
+    n_residual = max(1, int(round(n_points * (1.0 - uniform_fraction))))
+    n_uniform = max(0, n_points - n_residual)
+
+    rng = np.random.default_rng(seed)
+    pool_target = max(n_residual * pool_factor, 256)
+
+    # Reject-sample inside the geometry mask until pool is full.
+    pool_xy: list[np.ndarray] = []
+    collected = 0
+    batch = max(pool_target * 2, 512)
+    while collected < pool_target:
+        xs = rng.random(batch).astype(np.float32)
+        ys = rng.random(batch).astype(np.float32)
+        m = geometry_mask_np(xs, ys, geometry)
+        sel = np.stack([xs[m], ys[m]], axis=1)
+        if sel.size == 0:
+            batch *= 2
+            continue
+        pool_xy.append(sel)
+        collected += sel.shape[0]
+    pool = np.concatenate(pool_xy, axis=0)[:pool_target].astype(np.float32)
+
+    # Evaluate squared residual at the pool. Build a fresh graph; do not retain.
+    model.eval()
+    x_t = torch.tensor(pool[:, 0:1], dtype=torch.float32, device=device, requires_grad=True)
+    y_t = torch.tensor(pool[:, 1:2], dtype=torch.float32, device=device, requires_grad=True)
+    u, v = model(x_t, y_t)
+    eps_xx, eps_yy, gamma_xy = strains_from_displacement(u, v, x_t, y_t)
+    sxx, syy, txy = stresses_plane_stress(eps_xx, eps_yy, gamma_xy, material)
+    rx, ry = equilibrium_residuals(sxx, syy, txy, x_t, y_t)
+    res = (rx**2 + ry**2).detach().cpu().numpy().reshape(-1)
+    model.train()
+
+    # Probability ∝ residual**power, with a small floor so all points retain
+    # nonzero probability.
+    weights = np.power(np.maximum(res, 1e-12), float(power))
+    weight_sum = weights.sum()
+    if not np.isfinite(weight_sum) or weight_sum <= 0.0:
+        # Pathological case (network outputs all zeros): fall back to uniform.
+        idx = rng.choice(pool.shape[0], size=n_residual, replace=False)
+    else:
+        probs = weights / weight_sum
+        # `replace=False` requires probs to have at least n_residual nonzero entries.
+        n_nonzero = int(np.count_nonzero(probs))
+        if n_nonzero < n_residual:
+            idx = rng.choice(pool.shape[0], size=n_residual, replace=False)
+        else:
+            idx = rng.choice(pool.shape[0], size=n_residual, replace=False, p=probs)
+    residual_pts = pool[idx]
+
+    if n_uniform > 0:
+        uniform_pts = _residual_uniform_fill(geometry, n_uniform, rng)
+        return np.concatenate([residual_pts, uniform_pts], axis=0).astype(np.float32)
+    return residual_pts.astype(np.float32)
+
+
+def _residual_uniform_fill(
+    geometry: StructuralProblemConfig,
+    n: int,
+    rng: np.random.Generator,
+) -> np.ndarray:
+    """Uniform rejection sampling inside the geometry mask, used for RAD mixing."""
+    out: list[np.ndarray] = []
+    remaining = n
+    batch = max(remaining * 4, 256)
+    while remaining > 0:
+        xs = rng.random(batch).astype(np.float32)
+        ys = rng.random(batch).astype(np.float32)
+        m = geometry_mask_np(xs, ys, geometry)
+        sel = np.stack([xs[m], ys[m]], axis=1)
+        if sel.shape[0] == 0:
+            batch *= 2
+            continue
+        take = min(remaining, sel.shape[0])
+        out.append(sel[:take])
+        remaining -= take
+    return np.concatenate(out, axis=0).astype(np.float32)
 
 
 def _history_tail(history: list[float], n: int = 5) -> list[float]:

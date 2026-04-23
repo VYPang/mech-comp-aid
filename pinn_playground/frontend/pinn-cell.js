@@ -1,5 +1,5 @@
-import { createPinnSocket, fetchPinnPreview } from "./api.js?v=checkpoint-shell-8";
-import { renderLossPlot, renderNotePlot, renderPointCloudPlot, renderStressHeatmap, renderErrorHeatmap } from "./plots.js?v=checkpoint-shell-8";
+import { createPinnSocket, fetchPinnPreview } from "./api.js?v=checkpoint-shell-10";
+import { renderLossPlot, renderNotePlot, renderPointCloudPlot, renderStressHeatmap, renderErrorHeatmap } from "./plots.js?v=checkpoint-shell-10";
 
 /** Defaults when no saved state (e.g. first visit or after reset). */
 const DEFAULT_PINN_CONTROLS = {
@@ -15,10 +15,13 @@ const DEFAULT_PINN_CONTROLS = {
   nBoundary: "160",
   epochs: "500",
   normalizeInputs: true,
-  hiddenDim: "48",
-  nHiddenLayers: "4",
+  hiddenDim: "96",
+  nHiddenLayers: "5",
   pdeWeight: "1.0",
   bcWeight: "5.0",
+  residualResampleEvery: "200",
+  fourierFeatures: false,
+  fourierSigma: "1.0",
 };
 
 export function createPinnCell({ ui, runtimeState, shell }) {
@@ -69,6 +72,9 @@ export function createPinnCell({ ui, runtimeState, shell }) {
       nHiddenLayers: state.controls.nHiddenLayers.value,
       pdeWeight: state.controls.pdeWeight.value,
       bcWeight: state.controls.bcWeight.value,
+      residualResampleEvery: state.controls.residualResampleEvery.value,
+      fourierFeatures: state.controls.fourierFeatures.checked,
+      fourierSigma: state.controls.fourierSigma.value,
     };
   }
 
@@ -206,6 +212,14 @@ export function createPinnCell({ ui, runtimeState, shell }) {
             <input id="pinn-n-boundary" type="range" min="16" max="600" step="8" value="${v.nBoundary}" class="field-range" />
             <p class="field-help">Boundary points teach the support and traction conditions.</p>
           </div>
+          <div class="control-card lg:col-span-2">
+            <div class="range-row">
+              <label for="pinn-residual-resample-every">Residual Resample Every (epochs)</label>
+              <span id="pinn-residual-resample-every-value" class="range-value"></span>
+            </div>
+            <input id="pinn-residual-resample-every" type="range" min="0" max="1000" step="50" value="${v.residualResampleEvery}" class="field-range" />
+            <p class="field-help">Only used when the sampling strategy is <em>Adaptive</em>. Periodically replaces 70% of the interior points with new ones drawn where the equilibrium residual is largest. Set to 0 to disable.</p>
+          </div>
         </div>
       </details>
 
@@ -227,12 +241,27 @@ export function createPinnCell({ ui, runtimeState, shell }) {
             </div>
             <input id="pinn-normalize-inputs" type="checkbox" ${v.normalizeInputs ? "checked" : ""} class="h-5 w-5 rounded border-slate-600 bg-slate-800 text-cyan-400 focus:ring-cyan-400" />
           </div>
+          <div class="control-card flex items-center justify-between gap-4">
+            <div>
+              <label for="pinn-fourier-features" class="text-sm font-medium text-slate-200">Fourier Features</label>
+              <p class="text-xs text-slate-400">Random sin/cos input encoding to overcome the smooth-MLP spectral bias.</p>
+            </div>
+            <input id="pinn-fourier-features" type="checkbox" ${v.fourierFeatures ? "checked" : ""} class="h-5 w-5 rounded border-slate-600 bg-slate-800 text-cyan-400 focus:ring-cyan-400" />
+          </div>
+          <div class="control-card">
+            <div class="range-row">
+              <label for="pinn-fourier-sigma">Fourier Bandwidth (σ)</label>
+              <span id="pinn-fourier-sigma-value" class="range-value"></span>
+            </div>
+            <input id="pinn-fourier-sigma" type="range" min="0.2" max="5.0" step="0.1" value="${v.fourierSigma}" class="field-range" />
+            <p class="field-help">Frequency scale of the Fourier encoding. Small σ ≈ smooth field; large σ ≈ noisy field. Try 1–2 for stress problems.</p>
+          </div>
           <div class="control-card">
             <div class="range-row">
               <label for="pinn-hidden-dim">Hidden Width</label>
               <span id="pinn-hidden-dim-value" class="range-value"></span>
             </div>
-            <input id="pinn-hidden-dim" type="range" min="16" max="128" step="8" value="${v.hiddenDim}" class="field-range" />
+            <input id="pinn-hidden-dim" type="range" min="16" max="256" step="8" value="${v.hiddenDim}" class="field-range" />
             <p class="field-help">Wider layers increase capacity but also increase training cost.</p>
           </div>
           <div class="control-card">
@@ -240,7 +269,7 @@ export function createPinnCell({ ui, runtimeState, shell }) {
               <label for="pinn-n-hidden-layers">Hidden Layers</label>
               <span id="pinn-n-hidden-layers-value" class="range-value"></span>
             </div>
-            <input id="pinn-n-hidden-layers" type="range" min="2" max="6" step="1" value="${v.nHiddenLayers}" class="field-range" />
+            <input id="pinn-n-hidden-layers" type="range" min="2" max="8" step="1" value="${v.nHiddenLayers}" class="field-range" />
             <p class="field-help">More depth can fit harder fields, but may be slower to optimize.</p>
           </div>
         </div>
@@ -309,7 +338,10 @@ export function createPinnCell({ ui, runtimeState, shell }) {
       bcWeight: ui.controlsForm.querySelector("#pinn-bc-weight"),
       hiddenDim: ui.controlsForm.querySelector("#pinn-hidden-dim"),
       nHiddenLayers: ui.controlsForm.querySelector("#pinn-n-hidden-layers"),
+      residualResampleEvery: ui.controlsForm.querySelector("#pinn-residual-resample-every"),
       normalizeInputs: ui.controlsForm.querySelector("#pinn-normalize-inputs"),
+      fourierFeatures: ui.controlsForm.querySelector("#pinn-fourier-features"),
+      fourierSigma: ui.controlsForm.querySelector("#pinn-fourier-sigma"),
       startButton: ui.controlsForm.querySelector("#pinn-start-button"),
       stopButton: ui.controlsForm.querySelector("#pinn-stop-button"),
       valueLabels: {
@@ -320,6 +352,8 @@ export function createPinnCell({ ui, runtimeState, shell }) {
         bc_weight: ui.controlsForm.querySelector("#pinn-bc-weight-value"),
         hidden_dim: ui.controlsForm.querySelector("#pinn-hidden-dim-value"),
         n_hidden_layers: ui.controlsForm.querySelector("#pinn-n-hidden-layers-value"),
+        residual_resample_every: ui.controlsForm.querySelector("#pinn-residual-resample-every-value"),
+        fourier_sigma: ui.controlsForm.querySelector("#pinn-fourier-sigma-value"),
       },
     };
 
@@ -341,7 +375,10 @@ export function createPinnCell({ ui, runtimeState, shell }) {
       state.controls.bcWeight,
       state.controls.hiddenDim,
       state.controls.nHiddenLayers,
+      state.controls.residualResampleEvery,
       state.controls.normalizeInputs,
+      state.controls.fourierFeatures,
+      state.controls.fourierSigma,
     ];
 
     controls.filter(Boolean).forEach((control) => {
@@ -375,6 +412,13 @@ export function createPinnCell({ ui, runtimeState, shell }) {
     state.controls.valueLabels.bc_weight.textContent = Number(state.controls.bcWeight.value).toFixed(1);
     state.controls.valueLabels.hidden_dim.textContent = state.controls.hiddenDim.value;
     state.controls.valueLabels.n_hidden_layers.textContent = state.controls.nHiddenLayers.value;
+    if (state.controls.valueLabels.residual_resample_every) {
+      const v = Number(state.controls.residualResampleEvery.value);
+      state.controls.valueLabels.residual_resample_every.textContent = v === 0 ? "off" : String(v);
+    }
+    if (state.controls.valueLabels.fourier_sigma) {
+      state.controls.valueLabels.fourier_sigma.textContent = Number(state.controls.fourierSigma.value).toFixed(1);
+    }
   }
 
   function getConfig() {
@@ -409,9 +453,12 @@ export function createPinnCell({ ui, runtimeState, shell }) {
       bc_weight: Number(state.controls.bcWeight.value),
       hidden_dim: Number(state.controls.hiddenDim.value),
       n_hidden_layers: Number(state.controls.nHiddenLayers.value),
+      residual_resample_every: Number(state.controls.residualResampleEvery.value),
+      fourier_features: state.controls.fourierFeatures.checked,
+      fourier_sigma: Number(state.controls.fourierSigma.value),
       learning_rate: 0.001,
       update_every: 50,
-      stress_grid_n: 40,
+      stress_grid_n: 60,
       seed: 0,
     };
   }
@@ -686,6 +733,25 @@ export function createPinnCell({ ui, runtimeState, shell }) {
       if (message.type === "fem_baseline") {
         state.femBaseline = message.stress_grid;
         renderPinnViews();
+        return;
+      }
+      if (message.type === "resample") {
+        // Residual-adaptive resampling produced a new collocation cloud.
+        // Update the cached preview so the "Collocation Points" plot reflects
+        // the points the model is currently training on.
+        if (state.latestPreview && message.domain_points) {
+          const updated = {
+            ...state.latestPreview,
+            domain_points: message.domain_points,
+            counts: {
+              ...state.latestPreview.counts,
+              n_domain: message.n_points,
+            },
+          };
+          state.latestPreview = updated;
+          runtimeState.pinn.latestPreview = updated;
+          renderPinnViews();
+        }
         return;
       }
       if (message.type === "metrics") {

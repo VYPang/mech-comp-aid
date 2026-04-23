@@ -32,17 +32,33 @@ class PINN(nn.Module):
         n_hidden_layers: int = 4,
         *,
         normalize_inputs: bool = True,
+        fourier_features: bool = False,
+        fourier_num_features: int = 32,
+        fourier_sigma: float = 3.0,
+        fourier_seed: int = 0,
     ) -> None:
         super().__init__()
         self.normalize_inputs = normalize_inputs
+        self.fourier_features = fourier_features
         xmin, xmax, ymin, ymax = bbox_for_normalization()
         self.register_buffer("xmin", torch.tensor(xmin, dtype=torch.float32))
         self.register_buffer("xmax", torch.tensor(xmax, dtype=torch.float32))
         self.register_buffer("ymin", torch.tensor(ymin, dtype=torch.float32))
         self.register_buffer("ymax", torch.tensor(ymax, dtype=torch.float32))
 
+        # Random Fourier feature projection (Tancik et al. 2020). Frozen,
+        # not learned: keeps the teaching story of "raise the input frequency
+        # before the MLP so it can represent sharp features".
+        if fourier_features:
+            generator = torch.Generator().manual_seed(int(fourier_seed))
+            b = torch.randn(2, fourier_num_features, generator=generator) * float(fourier_sigma)
+            self.register_buffer("fourier_B", b)
+            d_in = 2 * fourier_num_features  # [sin, cos] of the projection
+        else:
+            self.register_buffer("fourier_B", torch.zeros(2, 1))
+            d_in = 2
+
         layers: list[nn.Module] = []
-        d_in = 2
         for _ in range(n_hidden_layers):
             layers.extend([nn.Linear(d_in, hidden_dim), nn.Tanh()])
             d_in = hidden_dim
@@ -67,8 +83,17 @@ class PINN(nn.Module):
         yn = 2.0 * (y - self.ymin) / span_y - 1.0
         return torch.cat([xn, yn], dim=-1)
 
+    def _encode(self, coords: torch.Tensor) -> torch.Tensor:
+        """Apply random Fourier feature encoding when enabled."""
+        if not self.fourier_features:
+            return coords
+        # coords: (N, 2); fourier_B: (2, M); proj: (N, M).
+        proj = 2.0 * torch.pi * (coords @ self.fourier_B)
+        return torch.cat([torch.sin(proj), torch.cos(proj)], dim=-1)
+
     def forward(self, x: torch.Tensor, y: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
-        inp = self._normalized_coords(x, y)
+        coords = self._normalized_coords(x, y)
+        inp = self._encode(coords)
         out = self.net(inp)
         return out[:, 0:1], out[:, 1:2]
 
