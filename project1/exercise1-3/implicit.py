@@ -1,128 +1,298 @@
 import numpy as np
-import typer
-from rich.console import Console
-from rich.panel import Panel
-from skimage import measure
 import pyvista as pv
+import typer
 from enum import Enum
+from pathlib import Path
+from rich.console import Console
+from skimage import measure
+from typing_extensions import Annotated
 
-app = typer.Typer(help="Implicit Surface Modeling CLI for Exercise 1-3")
+
 console = Console()
+app = typer.Typer(help="Visualize the box-cylinder union for exercise 1-3.")
+FIGURES_DIR = Path(__file__).resolve().parent / "figures"
+DEFAULT_CAMERA_POSITION = [
+    (2.6, 2.2, 1.8),
+    (0.0, 0.0, 0.15),
+    (0.0, 0.0, 1.0),
+]
+
 
 class BooleanMethod(str, Enum):
     minmax = "minmax"
     rfunc = "rfunc"
 
-def create_grid(res: int = 100, bound: float = 1.5):
-    """Generates a 3D coordinate grid."""
-    # We use mgrid from -bound to bound with 'res' steps
-    x, y, z = np.mgrid[-bound:bound:res*1j, -bound:bound:res*1j, -bound:bound:res*1j]
-    return x, y, z, bound, res
 
-def extract_mesh(F, bound, res):
-    """Extracts a PyVista PolyData isosurface from a 3D scalar field F = 0."""
-    spacing = 2 * bound / (res - 1)
-    # measure.marching_cubes returns faces as (N, 3) geometry
-    verts, faces, normals, values = measure.marching_cubes(F, 0, spacing=(spacing, spacing, spacing))
-    
-    # marching_cubes returns vertices relative to (0,0,0) index grid.
-    # We need to shift it down by bound to center origin at real (0,0,0)
-    verts = verts - bound 
-    
-    # Format faces for pyvista: [n, v1, v2, v3, n, v1, v2, v3...]
-    # where n is the number of vertices per face (always 3 for marching cubes)
-    pv_faces = np.hstack([np.full((len(faces), 1), 3), faces]).flatten()
-    return pv.PolyData(verts, pv_faces)
+@app.callback()
+def main() -> None:
+    pass
 
-def f_sphere(x, y, z):
-    """Implicit function for a sphere centered at origin, r=1."""
-    return x**2 + y**2 + z**2 - 1.0
 
-def f_box(x, y, z):
-    """Implicit function for a 1x1x1 box centered at origin."""
-    return np.maximum(np.maximum(np.abs(x) - 0.5, np.abs(y) - 0.5), np.abs(z) - 0.5)
+def r_union(field_a: np.ndarray, field_b: np.ndarray, alpha: float) -> np.ndarray:
+    blend = np.clip(field_a**2 + field_b**2 - 2.0 * alpha * field_a * field_b, 0.0, None)
+    return field_a + field_b + np.sqrt(blend)
 
-def f_cylinder(x, y, z):
-    """Implicit function for a cylinder aligned with z-axis. radius=0.1, height=0.2 centered at z=0.6"""
-    return np.maximum(x**2 + y**2 - 0.1**2, np.abs(z - 0.6) - 0.1)
 
-def r_min(a, b, alpha=0.5):
-    """R-function for smooth minimum (Union logic for interior F < 0)."""
-    return a + b - np.sqrt(a**2 + b**2 - 2 * alpha * a * b)
+def r_intersection(field_a: np.ndarray, field_b: np.ndarray, alpha: float) -> np.ndarray:
+    blend = np.clip(field_a**2 + field_b**2 - 2.0 * alpha * field_a * field_b, 0.0, None)
+    return field_a + field_b - np.sqrt(blend)
+
+
+def minmax_union(field_a: np.ndarray, field_b: np.ndarray) -> np.ndarray:
+    return np.maximum(field_a, field_b)
+
+
+def minmax_intersection(field_a: np.ndarray, field_b: np.ndarray) -> np.ndarray:
+    return np.minimum(field_a, field_b)
+
+
+def box_field(x: np.ndarray, y: np.ndarray, z: np.ndarray) -> np.ndarray:
+    return 0.5 - np.maximum(np.maximum(np.abs(x), np.abs(y)), np.abs(z))
+
+
+def sphere_field(x: np.ndarray, y: np.ndarray, z: np.ndarray) -> np.ndarray:
+    return 1.0 - (x**2 + y**2 + z**2)
+
+
+def cylinder_field(x: np.ndarray, y: np.ndarray, z: np.ndarray, method: BooleanMethod, alpha: float) -> np.ndarray:
+    radius = 0.1
+    embed_depth = 0.05
+    z_bottom = 0.5 - embed_depth
+    z_top = 0.7
+
+    radial_field = radius - np.sqrt(x**2 + y**2)
+    above_bottom = z - z_bottom
+    below_top = z_top - z
+    if method is BooleanMethod.minmax:
+        height_field = minmax_intersection(above_bottom, below_top)
+        return minmax_intersection(radial_field, height_field)
+
+    height_field = r_intersection(above_bottom, below_top, alpha)
+    return r_intersection(radial_field, height_field, alpha)
+
+
+def union_field(x: np.ndarray, y: np.ndarray, z: np.ndarray, method: BooleanMethod, alpha: float) -> np.ndarray:
+    box = box_field(x, y, z)
+    cylinder = cylinder_field(x, y, z, method, alpha)
+    if method is BooleanMethod.minmax:
+        return minmax_union(box, cylinder)
+    return r_union(box, cylinder, alpha)
+
+
+def metamorphosis_field(
+    sphere: np.ndarray,
+    box_cylinder: np.ndarray,
+    mu: float,
+) -> np.ndarray:
+    return (1.0 - mu) * sphere + mu * box_cylinder
+
+
+def build_grid(grid_min: float, grid_max: float, resolution: int) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    grid = np.mgrid[
+        grid_min:grid_max:complex(0, resolution),
+        grid_min:grid_max:complex(0, resolution),
+        grid_min:grid_max:complex(0, resolution),
+    ]
+    return grid[0], grid[1], grid[2]
+
+
+def extract_surface(
+    field: np.ndarray,
+    grid_min: float,
+    grid_max: float,
+    resolution: int,
+    level: float,
+) -> pv.PolyData:
+    spacing = (grid_max - grid_min) / (resolution - 1)
+    vertices, faces, _, _ = measure.marching_cubes(
+        field,
+        level=level,
+        spacing=(spacing, spacing, spacing),
+    )
+    vertices += np.array([grid_min, grid_min, grid_min])
+    pv_faces = np.column_stack((np.full(len(faces), 3), faces)).ravel()
+    return pv.PolyData(vertices, pv_faces)
+
+
+def render_surface(
+    surface: pv.PolyData,
+    title: str,
+    show: bool,
+    screenshot_path: Path | None = None,
+) -> None:
+    off_screen = screenshot_path is not None and not show
+    plotter = pv.Plotter(off_screen=off_screen, window_size=(1280, 960))
+    plotter.set_background("white")
+    plotter.add_text(title, font_size=16, color="black")
+    plotter.add_mesh(surface, color="lightblue", smooth_shading=True, show_edges=False)
+    plotter.show_axes()
+    plotter.camera_position = DEFAULT_CAMERA_POSITION
+
+    if show:
+        if screenshot_path is not None:
+            plotter.show(screenshot=str(screenshot_path), auto_close=True)
+        else:
+            plotter.show()
+        return
+
+    if screenshot_path is not None:
+        plotter.screenshot(str(screenshot_path))
+    plotter.close()
+
 
 @app.command()
-def sphere():
-    """(1) Visualize a sphere centered at (0,0,0) with radius of 1."""
-    console.print(Panel("[bold cyan]Formulation:[/bold cyan]\nF(x,y,z) = x² + y² + z² - 1", title="Sphere", expand=False))
-    
-    with console.status("[bold green]Computing 3D grid and scalar field..."):
-        x, y, z, bound, res = create_grid()
-        F = f_sphere(x, y, z)
-        mesh = extract_mesh(F, bound, res)
-        
-    plotter = pv.Plotter()
-    plotter.add_mesh(mesh, color='lightblue', smooth_shading=True)
-    plotter.add_axes()
-    console.print("[green]Rendering Sphere... Close the window inside PyVista to exit.[/green]")
-    plotter.show()
+def sphere(
+    grid_min: Annotated[
+        float,
+        typer.Option("--min", help="Minimum plotting bound for x, y, and z."),
+    ] = -1.5,
+    grid_max: Annotated[
+        float,
+        typer.Option("--max", help="Maximum plotting bound for x, y, and z."),
+    ] = 1.5,
+    res: Annotated[
+        int,
+        typer.Option("--res", min=10, help="Uniform marching cubes grid resolution."),
+    ] = 80,
+    show: Annotated[
+        bool,
+        typer.Option("--show/--no-show", help="Display the PyVista window after meshing."),
+    ] = True,
+) -> None:
+    console.print("[bold cyan]Building sphere implicit surface...[/bold cyan]")
+    console.print("f(x, y, z) = 1 - (x^2 + y^2 + z^2)")
+    console.print("isosurface: f(x, y, z) = 0")
+    console.print(f"center = [yellow](0, 0, 0)[/yellow], radius = [yellow]1[/yellow], resolution = [yellow]{res}[/yellow]")
+
+    x, y, z = build_grid(grid_min, grid_max, res)
+    field = sphere_field(x, y, z)
+
+    try:
+        surface = extract_surface(field, grid_min, grid_max, res, level=0.0)
+    except ValueError as exc:
+        console.print("[bold red]Isosurface extraction failed.[/bold red]")
+        console.print(str(exc))
+        raise typer.Exit(code=1) from exc
+
+    console.print(
+        f"[bold green]Mesh ready:[/bold green] {surface.n_points} vertices, {surface.n_cells} faces"
+    )
+
+    if not show:
+        return
+
+    render_surface(surface, "Sphere: f(x, y, z) = 0", show=show)
+
+
+@app.command()
+def metamorphose(
+    grid_min: Annotated[
+        float,
+        typer.Option("--min", help="Minimum plotting bound for x, y, and z."),
+    ] = -1.5,
+    grid_max: Annotated[
+        float,
+        typer.Option("--max", help="Maximum plotting bound for x, y, and z."),
+    ] = 1.5,
+    res: Annotated[
+        int,
+        typer.Option("--res", min=10, help="Uniform marching cubes grid resolution."),
+    ] = 80,
+    show: Annotated[
+        bool,
+        typer.Option("--show/--no-show", help="Display each metamorphosis frame while saving screenshots."),
+    ] = False,
+) -> None:
+    console.print("[bold cyan]Building sphere-to-box-cylinder metamorphosis...[/bold cyan]")
+    console.print("sphere field: f_s(x, y, z) = 1 - (x^2 + y^2 + z^2)")
+    console.print("target field: f_u(x, y, z) = max(f_box(x, y, z), f_cyl(x, y, z))")
+    console.print("metamorphosis: f_mu(x, y, z) = (1 - mu) f_s(x, y, z) + mu f_u(x, y, z)")
+    console.print("mu_i = i / 10 for i = 0, 1, ..., 10")
+    console.print(f"resolution = [yellow]{res}[/yellow]")
+
+    FIGURES_DIR.mkdir(parents=True, exist_ok=True)
+    x, y, z = build_grid(grid_min, grid_max, res)
+    sphere = sphere_field(x, y, z)
+    box_cylinder = union_field(x, y, z, BooleanMethod.minmax, alpha=0.5)
+
+    for step in range(11):
+        mu = step / 10.0
+        field = metamorphosis_field(sphere, box_cylinder, mu)
+        image_path = FIGURES_DIR / f"metamorphosis-{step:02d}.png"
+
+        try:
+            surface = extract_surface(field, grid_min, grid_max, res, level=0.0)
+        except ValueError as exc:
+            console.print(f"[bold red]Isosurface extraction failed at step {step} (mu={mu:.1f}).[/bold red]")
+            console.print(str(exc))
+            raise typer.Exit(code=1) from exc
+
+        render_surface(
+            surface,
+            title=f"Metamorphosis step {step}/10 (mu = {mu:.1f})",
+            show=show,
+            screenshot_path=image_path,
+        )
+        console.print(
+            f"step [yellow]{step:02d}[/yellow] | mu = [yellow]{mu:.1f}[/yellow] | "
+            f"mesh = [green]{surface.n_points} vertices, {surface.n_cells} faces[/green] | "
+            f"saved [blue]{image_path.name}[/blue]"
+        )
+
 
 @app.command()
 def union(
-    method: BooleanMethod = typer.Option(BooleanMethod.minmax, help="Boolean method (minmax or rfunc)"),
-    alpha: float = typer.Option(0.5, help="Alpha parameter for R-functions (blending smoothness)")
-):
-    """(2) Visualize the union of a box and a cylinder."""
-    if method == BooleanMethod.minmax:
-        console.print(Panel("[bold cyan]Formulation (Min/Max):[/bold cyan]\nF_box = max(|x|-0.5, |y|-0.5, |z|-0.5)\nF_cyl = max(x² + y² - 0.1², |z - 0.6| - 0.1)\nF_union = min(F_box, F_cyl)", title="Box-Cylinder Union", expand=False))
+    method: Annotated[
+        BooleanMethod,
+        typer.Option("--method", case_sensitive=False, help="Boolean operator: minmax or rfunc."),
+    ] = BooleanMethod.rfunc,
+    alpha: Annotated[
+        float,
+        typer.Option("--alpha", min=0.0, max=1.0, help="R-function alpha parameter in [0, 1]."),
+    ] = 0.5,
+    grid_min: Annotated[
+        float,
+        typer.Option("--min", help="Minimum plotting bound for x, y, and z."),
+    ] = -0.75,
+    grid_max: Annotated[
+        float,
+        typer.Option("--max", help="Maximum plotting bound for x, y, and z."),
+    ] = 0.9,
+    res: Annotated[
+        int,
+        typer.Option("--res", min=10, help="Uniform marching cubes grid resolution."),
+    ] = 60,
+    show: Annotated[
+        bool,
+        typer.Option("--show/--no-show", help="Display the PyVista window after meshing."),
+    ] = True,
+) -> None:
+    if method is BooleanMethod.minmax:
+        console.print("[bold cyan]Building box-cylinder union with min/max Boolean composition...[/bold cyan]")
+        console.print(f"resolution = [yellow]{res}[/yellow]")
     else:
-        console.print(Panel(f"[bold cyan]Formulation (R-function):[/bold cyan]\nF_box = max(|x|-0.5, |y|-0.5, |z|-0.5)\nF_cyl = max(x² + y² - 0.1², |z - 0.6| - 0.1)\nF_union = F_box + F_cyl - sqrt(F_box² + F_cyl² - 2*alpha*F_box*F_cyl)  (alpha={alpha})", title="Box-Cylinder Union", expand=False))
+        console.print("[bold cyan]Building box-cylinder union with R-functions...[/bold cyan]")
+        console.print(f"alpha = [yellow]{alpha:.3f}[/yellow], resolution = [yellow]{res}[/yellow]")
 
-    with console.status(f"[bold green]Computing Boolean Union ({method.value})..."):
-        x, y, z, bound, res = create_grid()
-        F_b = f_box(x, y, z)
-        F_c = f_cylinder(x, y, z)
-        
-        if method == BooleanMethod.minmax:
-            F = np.minimum(F_b, F_c)
-        else:
-            F = r_min(F_b, F_c, alpha=alpha)
-            
-        mesh = extract_mesh(F, bound, res)
-        
-    plotter = pv.Plotter()
-    plotter.add_mesh(mesh, color='lightblue', smooth_shading=True)
-    plotter.add_axes()
-    console.print(f"[green]Rendering Union ({method.value})... Close the window inside PyVista to exit.[/green]")
-    plotter.show()
+    x, y, z = build_grid(grid_min, grid_max, res)
+    field = union_field(x, y, z, method, alpha)
 
-@app.command()
-def metamorphose():
-    """(3) Generate metamorphosis between the sphere and the box-cylinder."""
-    console.print(Panel("[bold cyan]Formulation:[/bold cyan]\nF_union = min(F_box, F_cyl)\nF_sphere = x² + y² + z² - 1\nF_meta = μ * F_union + (1 - μ) * F_sphere\nFor μ in [0, 1] with 11 steps.", title="Metamorphosis", expand=False))
-    
-    with console.status("[bold green]Precomputing primitive geometries..."):
-        x, y, z, bound, res = create_grid()
-        F_s = f_sphere(x, y, z)
-        F_b = f_box(x, y, z)
-        F_c = f_cylinder(x, y, z)
-        F_u = np.minimum(F_b, F_c)
-    
-    # 10 linear steps = 11 images
-    mu_values = np.linspace(0, 1, 11)
-    
-    for i, mu in enumerate(mu_values):
-        console.print(f"[cyan]Rendering step {i+1}/11 -> μ = {mu:.1f}[/cyan] (Capture screenshot, then close window to proceed)")
-        
-        F_meta = mu * F_u + (1 - mu) * F_s
-        mesh = extract_mesh(F_meta, bound, res)
-        
-        plotter = pv.Plotter()
-        plotter.add_mesh(mesh, color='lightblue', smooth_shading=True)
-        plotter.add_axes()
-        plotter.add_text(f"Metamorphosis Step {i+1}/11\nmu = {mu:.1f}", position='upper_left', font_size=12)
-        plotter.show()
-        
-    console.print("[bold green]Metamorphosis sequence completed![/bold green]")
+    try:
+        surface = extract_surface(field, grid_min, grid_max, res, level=-0.01)
+    except ValueError as exc:
+        console.print("[bold red]Isosurface extraction failed.[/bold red]")
+        console.print(str(exc))
+        raise typer.Exit(code=1) from exc
+
+    console.print(
+        f"[bold green]Mesh ready:[/bold green] {surface.n_points} vertices, {surface.n_cells} faces"
+    )
+
+    if not show:
+        return
+
+    render_surface(surface, f"Union: {method.value}", show=show)
+
 
 if __name__ == "__main__":
     app()

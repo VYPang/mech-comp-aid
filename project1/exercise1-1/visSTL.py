@@ -98,6 +98,14 @@ def apply_stl_rotation(your_mesh, angle_x, angle_y):
     
     return rot_mesh
 
+def compute_rotation_difference(mesh_a, mesh_b):
+    """Return simple numerical metrics between two rotated meshes."""
+    diff = mesh_a.vectors - mesh_b.vectors
+    max_abs_diff = np.max(np.abs(diff))
+    rms_diff = np.sqrt(np.mean(diff ** 2))
+    max_point_distance = np.max(np.linalg.norm(diff.reshape(-1, 3), axis=1))
+    return max_abs_diff, rms_diff, max_point_distance
+
 @app.command()
 def visualize(
     model: ModelOption = typer.Option(ModelOption.both, help="Model to visualize: twisted, tessa, or both")
@@ -116,6 +124,7 @@ def visualize(
         plotter.subplot(0, 0)
         plotter.add_text("Twisted Vase", font_size=10)
         plotter.add_mesh(poly1, color='lightblue', show_edges=True)
+        plotter.show_axes()
         
         console.print("[cyan]Loading Tessa Vase...[/cyan]")
         file2 = get_file_path("tessa")
@@ -123,6 +132,7 @@ def visualize(
         plotter.subplot(0, 1)
         plotter.add_text("Tessa Vase", font_size=10)
         plotter.add_mesh(poly2, color='lightgreen', show_edges=True)
+        plotter.show_axes()
         
         plotter.link_views()
         console.print("[bold green]Showing both models...[/bold green]")
@@ -145,6 +155,7 @@ def visualize(
         poly = create_polydata_from_stl(file_path)
         plotter.add_text(name, font_size=10)
         plotter.add_mesh(poly, color=color, show_edges=True)
+        plotter.show_axes()
         
         console.print(f"[bold green]Showing {name}...[/bold green]")
         plotter.show()
@@ -173,23 +184,32 @@ def rotate(
 
     mesh_builtin = apply_stl_rotation(original_mesh, angle_x, angle_y)
     poly_builtin = create_polydata_from_mesh(mesh_builtin)
+
+    max_abs_diff, rms_diff, max_point_distance = compute_rotation_difference(
+        mesh_custom,
+        mesh_builtin,
+    )
+    console.print("[bold green]Rotation difference (custom vs. mesh.rotate()):[/bold green]")
+    console.print(f"[yellow]Max absolute coordinate difference:[/yellow] {max_abs_diff:.6e}")
+    console.print(f"[yellow]RMS coordinate difference:[/yellow] {rms_diff:.6e}")
+    console.print(f"[yellow]Max pointwise Euclidean distance:[/yellow] {max_point_distance:.6e}")
     
     original_poly = create_polydata_from_mesh(original_mesh)
 
-    plotter = pv.Plotter(shape=(1, 3))
+    plotter = pv.Plotter(shape=(1, 3), window_size=(1800, 700))
 
     plotter.subplot(0, 0)
-    plotter.add_text("Original Model", font_size=10)
+    plotter.add_text("Original Model", font_size=16)
     plotter.add_mesh(original_poly, color='lightblue', show_edges=False)
     plotter.show_axes()
 
     plotter.subplot(0, 1)
-    plotter.add_text("Method 1: Custom Rotation Matrices", font_size=10)
+    plotter.add_text("Method 1: Custom Rotation Matrices", font_size=16)
     plotter.add_mesh(poly_custom, color='lightgreen', show_edges=False)
     plotter.show_axes()
     
     plotter.subplot(0, 2)
-    plotter.add_text("Method 2: mesh.rotate() built-in", font_size=10)
+    plotter.add_text("Method 2: mesh.rotate() built-in", font_size=16)
     plotter.add_mesh(poly_builtin, color='lightcoral', show_edges=False)
     plotter.show_axes()
     
