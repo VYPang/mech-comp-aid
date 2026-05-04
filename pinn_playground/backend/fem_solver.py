@@ -19,7 +19,11 @@ from pinn_playground.backend.fem_geometry import (
     serialize_mesh_payload,
     top_load_facets,
 )
-from pinn_playground.backend.problem_definition import FEMProblemConfig
+from pinn_playground.backend.problem_definition import (
+    FEMMeshConfig,
+    FEMProblemConfig,
+    StructuralProblemConfig,
+)
 
 
 def solve_fem_problem(config: FEMProblemConfig, *, grid_n: int = 60) -> dict[str, Any]:
@@ -198,3 +202,54 @@ def _deformed_mesh_payload(mesh, ux: np.ndarray, uy: np.ndarray) -> tuple[dict[s
         },
         scale,
     )
+
+
+def solve_fem_for_teacher(
+    problem: StructuralProblemConfig,
+    *,
+    n_cells: int = 180,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """
+    Run a high-resolution FEM solve for the shared structural case and return
+    the raw nodal displacement field used to construct teacher targets for the
+    guided PINN training mode.
+
+    Returns (nodes (N, 2), ux (N,), uy (N,)) in physical units. The caller is
+    responsible for rescaling physical displacements into the training units
+    the PINN actually sees.
+    """
+    fem_config = FEMProblemConfig(
+        geometry=problem.geometry.model_dump(),
+        material=problem.material.model_dump(),
+        support=problem.support.model_dump(),
+        load=problem.load.model_dump(),
+        mesh=FEMMeshConfig(n_cells=n_cells),
+    )
+    mesh = build_structured_frame_mesh(fem_config)
+    element = ElementVector(ElementTriP1())
+    basis = Basis(mesh, element)
+
+    effective_young, effective_poisson = plane_stress(
+        fem_config.material.young,
+        fem_config.material.poisson,
+    )
+    lam, mu = lame_parameters(effective_young, effective_poisson)
+
+    stiffness = asm(linear_elasticity(lam, mu), basis)
+    load_facets = top_load_facets(mesh, fem_config)
+    facet_basis = FacetBasis(mesh, element, facets=load_facets)
+
+    traction_x = float(fem_config.load.traction_x)
+    traction_y = float(fem_config.load.traction_y)
+
+    @LinearForm
+    def loading(v, _w):
+        return traction_x * v[0] + traction_y * v[1]
+
+    rhs = asm(loading, facet_basis)
+    fixed_dofs = basis.get_dofs(fem_config.support.fixed_edge).all()
+    solution = solve(*condense(stiffness, rhs, D=fixed_dofs))
+    ux = np.asarray(solution[basis.nodal_dofs[0]], dtype=np.float64)
+    uy = np.asarray(solution[basis.nodal_dofs[1]], dtype=np.float64)
+    nodes = np.asarray(mesh.p.T, dtype=np.float64)
+    return nodes, ux, uy

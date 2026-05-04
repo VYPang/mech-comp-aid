@@ -10,6 +10,7 @@ from typing import Any, Literal
 import numpy as np
 import torch
 from pydantic import BaseModel, ConfigDict, Field
+from scipy.interpolate import griddata
 from starlette.websockets import WebSocket
 
 from pinn_playground.backend.physics_env import (
@@ -30,6 +31,26 @@ from pinn_playground.backend.problem_definition import FEMProblemConfig, FEMMesh
 
 
 SamplingLiteral = Literal["uniform", "adaptive"]
+
+
+class TeacherConfig(BaseModel):
+    """
+    Configuration for the optional teacher-guided training mode.
+
+    The teacher term supervises PINN displacement at sparse points sampled from
+    a high-resolution FEM solution of the *same* traction-driven problem. Only
+    used when ``enabled`` is True.
+    """
+
+    model_config = ConfigDict(extra="ignore")
+
+    enabled: bool = False
+    n_interior: int = Field(default=120, ge=0, le=5000)
+    n_boundary: int = Field(default=40, ge=0, le=2000)
+    n_load_patch: int = Field(default=20, ge=0, le=500)
+    weight: float = Field(default=10.0, gt=0.0, le=1000.0)
+    seed: int = 7
+
 
 
 class TrainingConfig(BaseModel):
@@ -64,6 +85,11 @@ class TrainingConfig(BaseModel):
     fourier_features: bool = False
     fourier_num_features: int = Field(default=16, ge=4, le=256)
     fourier_sigma: float = Field(default=1.0, gt=0.0, le=20.0)
+    # Optional teacher-guided training. When enabled, a high-resolution FEM
+    # solve of the same case is sampled sparsely and its displacement values
+    # are added as a supervised regression target alongside the PDE and BC
+    # losses. See `teacher_guided_pinn_plan.md` for the design rationale.
+    teacher: TeacherConfig = Field(default_factory=TeacherConfig)
 
     def physics_case_id(self) -> str:
         return self.problem.case_id()
@@ -162,6 +188,47 @@ async def stream_training_session(
         )
         await websocket.send_json(build_preview_payload(config))
 
+        # Build teacher dataset when guided mode is enabled. Heavy FEM solve
+        # runs off-thread so it never blocks the websocket event loop.
+        teacher_data: dict[str, Any] | None = None
+        if config.teacher.enabled:
+            teacher_data = await asyncio.to_thread(_build_teacher_dataset, config, device)
+            if teacher_data is not None:
+                await websocket.send_json(
+                    {
+                        "type": "teacher_preview",
+                        "physics_case_id": config.physics_case_id(),
+                        "counts": teacher_data["counts"],
+                        "points": {
+                            "interior": {
+                                "x": _serialize_vector(teacher_data["xy_by_cat"]["interior"][:, 0])
+                                if teacher_data["xy_by_cat"]["interior"].size
+                                else [],
+                                "y": _serialize_vector(teacher_data["xy_by_cat"]["interior"][:, 1])
+                                if teacher_data["xy_by_cat"]["interior"].size
+                                else [],
+                            },
+                            "boundary": {
+                                "x": _serialize_vector(teacher_data["xy_by_cat"]["boundary"][:, 0])
+                                if teacher_data["xy_by_cat"]["boundary"].size
+                                else [],
+                                "y": _serialize_vector(teacher_data["xy_by_cat"]["boundary"][:, 1])
+                                if teacher_data["xy_by_cat"]["boundary"].size
+                                else [],
+                            },
+                            "load_patch": {
+                                "x": _serialize_vector(teacher_data["xy_by_cat"]["load_patch"][:, 0])
+                                if teacher_data["xy_by_cat"]["load_patch"].size
+                                else [],
+                                "y": _serialize_vector(teacher_data["xy_by_cat"]["load_patch"][:, 1])
+                                if teacher_data["xy_by_cat"]["load_patch"].size
+                                else [],
+                            },
+                        },
+                        "disp_scale": teacher_data["disp_scale"],
+                    }
+                )
+
         # Run FEM baseline at max resolution (off-thread; never blocks the training loop).
         fem_baseline_z: np.ndarray | None = None
         fem_baseline_result = await asyncio.to_thread(_build_fem_baseline, config, config.stress_grid_n)
@@ -221,7 +288,21 @@ async def stream_training_session(
                 device=device,
             )
 
-            total_loss = config.pde_weight * pde_loss + config.bc_weight * bc_loss
+            teacher_loss = torch.zeros((), dtype=torch.float32, device=device)
+            teacher_weight = 0.0
+            if teacher_data is not None:
+                u_pred, v_pred = model(teacher_data["x"], teacher_data["y"])
+                teacher_loss = torch.mean(
+                    (u_pred - teacher_data["u"]) ** 2
+                    + (v_pred - teacher_data["v"]) ** 2
+                )
+                teacher_weight = float(config.teacher.weight)
+
+            total_loss = (
+                config.pde_weight * pde_loss
+                + config.bc_weight * bc_loss
+                + teacher_weight * teacher_loss
+            )
             total_loss.backward()
             optimizer.step()
             scheduler.step()
@@ -229,6 +310,7 @@ async def stream_training_session(
             total_value = float(total_loss.detach().cpu().item())
             pde_value = float(pde_loss.detach().cpu().item())
             bc_value = float(bc_loss.detach().cpu().item())
+            teacher_value = float(teacher_loss.detach().cpu().item()) if teacher_data is not None else None
             total_history.append(total_value)
             best_total = min(best_total, total_value)
 
@@ -287,6 +369,7 @@ async def stream_training_session(
                         "total_loss": total_value,
                         "pde_loss": pde_value,
                         "bc_loss": bc_value,
+                        "teacher_loss": teacher_value,
                         "stress_grid": _serialize_grid(xg, yg, vm),
                         "error_grid": error_grid,
                         "history_tail": _history_tail(total_history),
@@ -540,3 +623,273 @@ def _serialize_grid(x: np.ndarray, y: np.ndarray, z: np.ndarray) -> dict[str, An
     for row in z.tolist():
         z_rows.append([None if value is None or not np.isfinite(value) else float(value) for value in row])
     return {"x": x_axis, "y": y_axis, "z": z_rows}
+
+
+# ---------------------------------------------------------------------------
+# Teacher-guided training helpers
+# ---------------------------------------------------------------------------
+
+
+def _teacher_displacement_scale(problem: StructuralProblemConfig) -> float:
+    """
+    Map FEM displacement (in physical units) onto the displacement scale the
+    PINN actually learns during training.
+
+    The PINN is trained with a normalized material (E=1) and a normalized top
+    traction (|t|=1 after dividing by ``traction_scale``). In linear elasticity
+    under traction loading, stress is independent of E, so the PINN's training
+    strain is ``ε_train = σ_phys / traction_scale`` and the training
+    displacement is larger than the physical one by the factor
+    ``young_phys / traction_scale``.
+    """
+    traction_scale = max(
+        abs(float(problem.load.traction_x)),
+        abs(float(problem.load.traction_y)),
+        1e-12,
+    )
+    young_phys = float(problem.material.young)
+    return young_phys / traction_scale
+
+
+def sample_teacher_points_xy(
+    problem: StructuralProblemConfig,
+    *,
+    n_interior: int,
+    n_boundary: int,
+    n_load_patch: int,
+    seed: int,
+) -> dict[str, np.ndarray]:
+    """
+    Sample teacher point coordinates grouped by category. FEM data is not
+    required here: categorization depends only on geometry and load patch
+    location. All three groups use uniform sampling within their own region.
+    """
+    rng = np.random.default_rng(seed)
+
+    if n_interior > 0:
+        interior = _sample_uniform_filtered_problem(n_interior, problem, rng)
+    else:
+        interior = np.zeros((0, 2), dtype=np.float32)
+
+    boundary_pts = _sample_boundary_excluding_load_patch(
+        problem=problem,
+        n_points=n_boundary,
+        rng=rng,
+    )
+
+    if n_load_patch > 0:
+        xs = rng.uniform(
+            float(problem.load.x_min),
+            float(problem.load.x_max),
+            size=n_load_patch,
+        ).astype(np.float32)
+        ys = np.full(n_load_patch, float(OUTER_HI), dtype=np.float32)
+        load_pts = np.stack([xs, ys], axis=1)
+    else:
+        load_pts = np.zeros((0, 2), dtype=np.float32)
+
+    return {
+        "interior": interior,
+        "boundary": boundary_pts,
+        "load_patch": load_pts,
+    }
+
+
+def _sample_uniform_filtered_problem(
+    n: int,
+    problem: StructuralProblemConfig,
+    rng: np.random.Generator,
+) -> np.ndarray:
+    """Rejection sample uniform interior points inside the solid domain."""
+    out: list[np.ndarray] = []
+    remaining = n
+    batch = max(remaining * 4, 256)
+    while remaining > 0:
+        xs = rng.random(batch).astype(np.float32)
+        ys = rng.random(batch).astype(np.float32)
+        m = geometry_mask_np(xs, ys, problem)
+        sel = np.stack([xs[m], ys[m]], axis=1)
+        if sel.shape[0] == 0:
+            batch *= 2
+            continue
+        take = min(remaining, sel.shape[0])
+        out.append(sel[:take])
+        remaining -= take
+    return np.concatenate(out, axis=0).astype(np.float32)
+
+
+def _sample_boundary_excluding_load_patch(
+    *,
+    problem: StructuralProblemConfig,
+    n_points: int,
+    rng: np.random.Generator,
+) -> np.ndarray:
+    """
+    Draw boundary teacher points from the full solid boundary but exclude the
+    traction patch on the top edge. The patch is already represented by a
+    dedicated category.
+    """
+    if n_points <= 0:
+        return np.zeros((0, 2), dtype=np.float32)
+
+    oversample = max(n_points * 4, 64)
+    per_edge = max(2, oversample // 8)
+    bx, by, _, _ = sample_boundary_points(
+        per_edge,
+        problem,
+        seed=int(rng.integers(low=0, high=2**31 - 1)),
+    )
+    if bx.size == 0:
+        return np.zeros((0, 2), dtype=np.float32)
+
+    top_mask = np.isclose(by, float(OUTER_HI), atol=1e-6, rtol=0.0)
+    load_mask = (
+        top_mask
+        & (bx >= float(problem.load.x_min))
+        & (bx <= float(problem.load.x_max))
+    )
+    keep = np.stack([bx[~load_mask], by[~load_mask]], axis=1).astype(np.float32)
+    if keep.shape[0] == 0:
+        return np.zeros((0, 2), dtype=np.float32)
+
+    if keep.shape[0] <= n_points:
+        return keep
+    idx = rng.choice(keep.shape[0], size=n_points, replace=False)
+    return keep[idx]
+
+
+def _interpolate_fem_displacement(
+    nodes: np.ndarray,
+    ux: np.ndarray,
+    uy: np.ndarray,
+    teacher_xy: np.ndarray,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Interpolate FEM nodal displacement onto teacher sample locations."""
+    if teacher_xy.shape[0] == 0:
+        return (
+            np.zeros((0,), dtype=np.float64),
+            np.zeros((0,), dtype=np.float64),
+        )
+
+    ux_lin = griddata(nodes, ux, teacher_xy, method="linear")
+    uy_lin = griddata(nodes, uy, teacher_xy, method="linear")
+    ux_near = griddata(nodes, ux, teacher_xy, method="nearest")
+    uy_near = griddata(nodes, uy, teacher_xy, method="nearest")
+    ux_out = np.where(np.isfinite(ux_lin), ux_lin, ux_near)
+    uy_out = np.where(np.isfinite(uy_lin), uy_lin, uy_near)
+    return ux_out.astype(np.float64), uy_out.astype(np.float64)
+
+
+def _build_teacher_dataset(
+    config: "TrainingConfig",
+    device: torch.device,
+) -> "dict[str, Any] | None":
+    """
+    Run the high-resolution FEM teacher solve, sample teacher points, and
+    rescale the FEM displacements onto the PINN training scale. Returns a
+    dictionary with ``x, y, u, v`` tensors on ``device`` plus a categorized
+    xy preview dict. Returns ``None`` if no category requested any points or
+    the FEM solve fails.
+    """
+    teacher = config.teacher
+    if not teacher.enabled:
+        return None
+    if teacher.n_interior + teacher.n_boundary + teacher.n_load_patch <= 0:
+        return None
+
+    try:
+        from pinn_playground.backend.fem_solver import solve_fem_for_teacher  # local import
+
+        nodes, ux_phys, uy_phys = solve_fem_for_teacher(config.problem)
+    except Exception:
+        return None
+
+    xy_by_cat = sample_teacher_points_xy(
+        config.problem,
+        n_interior=teacher.n_interior,
+        n_boundary=teacher.n_boundary,
+        n_load_patch=teacher.n_load_patch,
+        seed=int(teacher.seed) if teacher.seed is not None else int(config.seed) + 9999,
+    )
+    all_xy = np.concatenate(
+        [xy_by_cat["interior"], xy_by_cat["boundary"], xy_by_cat["load_patch"]],
+        axis=0,
+    ).astype(np.float64)
+    if all_xy.shape[0] == 0:
+        return None
+
+    ux_at, uy_at = _interpolate_fem_displacement(nodes, ux_phys, uy_phys, all_xy)
+    disp_scale = _teacher_displacement_scale(config.problem)
+    ux_train = (ux_at * disp_scale).astype(np.float32)
+    uy_train = (uy_at * disp_scale).astype(np.float32)
+
+    x_tensor = torch.tensor(all_xy[:, 0:1].astype(np.float32), dtype=torch.float32, device=device)
+    y_tensor = torch.tensor(all_xy[:, 1:2].astype(np.float32), dtype=torch.float32, device=device)
+    u_tensor = torch.tensor(ux_train.reshape(-1, 1), dtype=torch.float32, device=device)
+    v_tensor = torch.tensor(uy_train.reshape(-1, 1), dtype=torch.float32, device=device)
+
+    return {
+        "xy_by_cat": xy_by_cat,
+        "x": x_tensor,
+        "y": y_tensor,
+        "u": u_tensor,
+        "v": v_tensor,
+        "counts": {
+            "interior": int(xy_by_cat["interior"].shape[0]),
+            "boundary": int(xy_by_cat["boundary"].shape[0]),
+            "load_patch": int(xy_by_cat["load_patch"].shape[0]),
+        },
+        "disp_scale": float(disp_scale),
+    }
+
+
+def build_teacher_preview_payload(config: "TrainingConfig") -> dict[str, Any]:
+    """
+    Return teacher point coordinates grouped by category for the browser
+    overlay. Does not require running FEM and is safe for interactive preview.
+    """
+    if not config.teacher.enabled:
+        return {
+            "type": "teacher_preview",
+            "case_id": config.physics_case_id(),
+            "enabled": False,
+            "counts": {"interior": 0, "boundary": 0, "load_patch": 0},
+            "points": {
+                "interior": {"x": [], "y": []},
+                "boundary": {"x": [], "y": []},
+                "load_patch": {"x": [], "y": []},
+            },
+        }
+
+    xy_by_cat = sample_teacher_points_xy(
+        config.problem,
+        n_interior=config.teacher.n_interior,
+        n_boundary=config.teacher.n_boundary,
+        n_load_patch=config.teacher.n_load_patch,
+        seed=int(config.teacher.seed) if config.teacher.seed is not None else int(config.seed) + 9999,
+    )
+
+    def _serialize(group: np.ndarray) -> dict[str, list[float]]:
+        if group.shape[0] == 0:
+            return {"x": [], "y": []}
+        return {
+            "x": _serialize_vector(group[:, 0]),
+            "y": _serialize_vector(group[:, 1]),
+        }
+
+    return {
+        "type": "teacher_preview",
+        "case_id": config.physics_case_id(),
+        "enabled": True,
+        "counts": {
+            "interior": int(xy_by_cat["interior"].shape[0]),
+            "boundary": int(xy_by_cat["boundary"].shape[0]),
+            "load_patch": int(xy_by_cat["load_patch"].shape[0]),
+        },
+        "points": {
+            "interior": _serialize(xy_by_cat["interior"]),
+            "boundary": _serialize(xy_by_cat["boundary"]),
+            "load_patch": _serialize(xy_by_cat["load_patch"]),
+        },
+    }
+

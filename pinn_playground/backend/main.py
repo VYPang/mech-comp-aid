@@ -15,6 +15,7 @@ from pinn_playground.backend.problem_definition import FEMProblemConfig
 from pinn_playground.backend.training import (
     TrainingConfig,
     build_preview_payload,
+    build_teacher_preview_payload,
     stream_training_session,
 )
 
@@ -36,6 +37,12 @@ def health() -> dict[str, str]:
 def preview_points(config: TrainingConfig) -> dict[str, object]:
     """Return plot-friendly collocation and boundary points for the current UI state."""
     return build_preview_payload(config)
+
+
+@app.post("/api/teacher-preview")
+def teacher_preview(config: TrainingConfig) -> dict[str, object]:
+    """Return teacher-point coordinates grouped by category for the overlay plot."""
+    return build_teacher_preview_payload(config)
 
 
 @app.post("/api/fem/preview")

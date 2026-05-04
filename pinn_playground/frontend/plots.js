@@ -6,6 +6,7 @@ const plotLayoutBase = {
 };
 
 const loadPatchColor = "#22c55e";
+const teacherColor = "#f472b6";
 
 export function initializeShellPlots(ids) {
   renderNotePlot(ids.left, "Waiting for a checkpoint", [
@@ -21,42 +22,27 @@ export function initializeShellPlots(ids) {
 
 export function renderPointCloudPlot(containerId, payload) {
   const traces = [];
-  const shapes = [];
+  traces.push({
+    x: payload.domain_points.x,
+    y: payload.domain_points.y,
+    type: "scatter",
+    mode: "markers",
+    name: "Domain",
+    marker: { size: 5, color: "#22d3ee", opacity: 0.75 },
+  });
 
-  traces.push(
-    {
-      x: payload.domain_points.x,
-      y: payload.domain_points.y,
-      type: "scattergl",
-      mode: "markers",
-      name: "Domain",
-      marker: { size: 5, color: "#22d3ee", opacity: 0.75 },
-    },
-    {
-      x: payload.boundary_points.x,
-      y: payload.boundary_points.y,
-      type: "scattergl",
-      mode: "markers",
-      name: "Boundary",
-      marker: { size: 6, color: "#f59e0b", opacity: 0.95 },
-    },
-  );
+  traces.push({
+    x: payload.boundary_points.x,
+    y: payload.boundary_points.y,
+    type: "scatter",
+    mode: "markers",
+    name: "Boundary",
+    marker: { size: 6, color: "#f59e0b", opacity: 0.95 },
+  });
 
   if (payload?.load?.edge === "top") {
     const xMin = payload.load.patch_center - 0.5 * payload.load.patch_width;
     const xMax = payload.load.patch_center + 0.5 * payload.load.patch_width;
-
-    shapes.push({
-      type: "line",
-      xref: "x",
-      yref: "y",
-      x0: xMin,
-      x1: xMax,
-      y0: 1,
-      y1: 1,
-      line: { color: loadPatchColor, width: 5 },
-      layer: "above",
-    });
 
     traces.push({
       x: [xMin, xMax],
@@ -66,8 +52,32 @@ export function renderPointCloudPlot(containerId, payload) {
       name: "Top Load Patch",
       line: { color: loadPatchColor, width: 5 },
       hoverinfo: "skip",
-      visible: "legendonly",
     });
+  }
+
+  const teacher = payload?.teacher_points;
+  if (teacher) {
+    const addTeacherGroup = (group, label) => {
+      const xs = group?.x ?? [];
+      const ys = group?.y ?? [];
+      if (!xs.length) return;
+      traces.push({
+        x: xs,
+        y: ys,
+        type: "scatter",
+        mode: "markers",
+        name: label,
+        marker: {
+          size: 4,
+          color: teacherColor,
+          opacity: 1.0,
+          line: { width: 0.5, color: "#1e293b" },
+        },
+      });
+    };
+    addTeacherGroup(teacher.interior, "Teacher (interior)");
+    addTeacherGroup(teacher.boundary, "Teacher (boundary)");
+    addTeacherGroup(teacher.load_patch, "Teacher (load patch)");
   }
 
   Plotly.react(
@@ -75,7 +85,6 @@ export function renderPointCloudPlot(containerId, payload) {
     traces,
     {
       ...plotLayoutBase,
-      shapes,
       xaxis: { title: "x", range: [-0.08, 1.08], gridcolor: "rgba(148, 163, 184, 0.15)" },
       yaxis: {
         title: "y",
@@ -145,31 +154,41 @@ export function renderErrorHeatmap(containerId, grid) {
 }
 
 export function renderLossPlot(containerId, losses) {
+  const traces = [
+    {
+      x: losses.epoch,
+      y: losses.total,
+      mode: "lines+markers",
+      name: "Total Loss",
+      line: { color: "#22d3ee" },
+    },
+    {
+      x: losses.epoch,
+      y: losses.pde,
+      mode: "lines+markers",
+      name: "Physics Loss",
+      line: { color: "#818cf8" },
+    },
+    {
+      x: losses.epoch,
+      y: losses.bc,
+      mode: "lines+markers",
+      name: "BC Loss",
+      line: { color: "#f97316" },
+    },
+  ];
+  if (Array.isArray(losses.teacher) && losses.teacher.some((v) => Number.isFinite(v))) {
+    traces.push({
+      x: losses.epoch,
+      y: losses.teacher,
+      mode: "lines+markers",
+      name: "Teacher Loss",
+      line: { color: teacherColor },
+    });
+  }
   Plotly.react(
     containerId,
-    [
-      {
-        x: losses.epoch,
-        y: losses.total,
-        mode: "lines+markers",
-        name: "Total Loss",
-        line: { color: "#22d3ee" },
-      },
-      {
-        x: losses.epoch,
-        y: losses.pde,
-        mode: "lines+markers",
-        name: "Physics Loss",
-        line: { color: "#818cf8" },
-      },
-      {
-        x: losses.epoch,
-        y: losses.bc,
-        mode: "lines+markers",
-        name: "BC Loss",
-        line: { color: "#f97316" },
-      },
-    ],
+    traces,
     {
       ...plotLayoutBase,
       xaxis: { title: "Epoch", gridcolor: "rgba(148, 163, 184, 0.15)" },

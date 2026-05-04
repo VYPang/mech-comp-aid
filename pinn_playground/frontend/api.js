@@ -28,6 +28,10 @@ export function fetchPinnPreview(config) {
   return postJson("/api/preview-points", config);
 }
 
+export function fetchTeacherPreview(config) {
+  return postJson("/api/teacher-preview", config);
+}
+
 export function createPinnSocket() {
   const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
   return new WebSocket(`${protocol}//${window.location.host}/ws/train`);
