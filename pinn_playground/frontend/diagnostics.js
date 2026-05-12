@@ -1,5 +1,5 @@
-import { fetchWebuiDiagnostics } from "./api.js?v=checkpoint-shell-13";
-import { buildDiagnosticsRequest } from "./control-config.js?v=checkpoint-shell-13";
+import { fetchWebuiDiagnostics } from "./api.js?v=checkpoint-shell-14";
+import { buildDiagnosticsRequest } from "./control-config.js?v=checkpoint-shell-14";
 
 export function installDiagnosticsDebugHook({ runtimeState, progressStore }) {
   if (typeof window === "undefined") {

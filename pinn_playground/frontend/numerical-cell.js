@@ -1,7 +1,7 @@
-import { fetchFemPreview, fetchFemSolve } from "./api.js?v=checkpoint-shell-13";
-import { buildFemConfig, DEFAULT_FEM_CONTROLS, mergeControlValues, readFemControlValues } from "./control-config.js?v=checkpoint-shell-13";
-import { buildNumericalGuideSections } from "./guide-content.js?v=checkpoint-shell-13";
-import { renderFemBoundaryPlot, renderFemDeformedPlot, renderFemMeshPlot, renderNotePlot, renderStressHeatmap } from "./plots.js?v=checkpoint-shell-13";
+import { fetchFemPreview, fetchFemSolve } from "./api.js?v=checkpoint-shell-14";
+import { buildFemConfig, DEFAULT_FEM_CONTROLS, mergeControlValues, readFemControlValues } from "./control-config.js?v=checkpoint-shell-14";
+import { buildNumericalGuideSections } from "./guide-content.js?v=checkpoint-shell-14";
+import { renderFemBoundaryPlot, renderFemDeformedPlot, renderFemMeshPlot, renderNotePlot, renderStressHeatmap } from "./plots.js?v=checkpoint-shell-14";
 
 export function createNumericalCell({ ui, runtimeState, shell }) {
   const state = {

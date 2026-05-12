@@ -1,8 +1,9 @@
-import { canAdvanceCheckpoint, getCompletionMessage } from "./checkpoint-rules.js?v=checkpoint-shell-13";
-import { installDiagnosticsDebugHook } from "./diagnostics.js?v=checkpoint-shell-13";
-import { createNumericalCell } from "./numerical-cell.js?v=checkpoint-shell-13";
-import { createPinnCell } from "./pinn-cell.js?v=checkpoint-shell-13";
-import { initializeShellPlots } from "./plots.js?v=checkpoint-shell-13";
+import { canAdvanceCheckpoint, getCompletionMessage } from "./checkpoint-rules.js?v=checkpoint-shell-14";
+import { installDiagnosticsDebugHook } from "./diagnostics.js?v=checkpoint-shell-14";
+import { createNumericalCell } from "./numerical-cell.js?v=checkpoint-shell-14";
+import { createPinnCell } from "./pinn-cell.js?v=checkpoint-shell-14";
+import { createTutorialCell } from "./tutorial-cell.js?v=checkpoint-shell-14";
+import { initializeShellPlots } from "./plots.js?v=checkpoint-shell-14";
 
 export function createAppShell({ ui, progressStore }) {
   const runtimeState = {
@@ -10,12 +11,20 @@ export function createAppShell({ ui, progressStore }) {
     fem: {},
     pinn: {},
   };
-  const initialActiveCell = progressStore.getActiveCheckpoint()?.cellId ?? "numerical";
+  const initialActiveCheckpoint = progressStore.getActiveCheckpoint();
+  const initialActiveGroup = findGroupId(initialActiveCheckpoint?.id) ?? "numerical";
   const groupCollapsed = {
-    numerical: window.matchMedia("(max-width: 1279px)").matches ? initialActiveCell !== "numerical" : false,
-    pinn: window.matchMedia("(max-width: 1279px)").matches ? initialActiveCell !== "pinn" : false,
+    numerical: window.matchMedia("(max-width: 1279px)").matches ? initialActiveGroup !== "numerical" : false,
+    pinn: window.matchMedia("(max-width: 1279px)").matches ? initialActiveGroup !== "pinn" : false,
   };
-  let lastActiveCell = initialActiveCell;
+  let lastActiveGroup = initialActiveGroup;
+
+  function findGroupId(checkpointId) {
+    if (!checkpointId) return null;
+    const group = progressStore.checkpointGroups.find((g) =>
+      g.checkpoints.some((c) => c.id === checkpointId));
+    return group?.id ?? null;
+  }
 
   const shellHelpers = {
     setGuide(html) {
@@ -54,6 +63,7 @@ export function createAppShell({ ui, progressStore }) {
   const cells = {
     numerical: createNumericalCell({ ui, runtimeState, shell: shellHelpers }),
     pinn: createPinnCell({ ui, runtimeState, shell: shellHelpers }),
+    pinnTutorial: createTutorialCell({ ui, runtimeState, shell: shellHelpers }),
   };
 
   installDiagnosticsDebugHook({ runtimeState, progressStore });
@@ -104,9 +114,10 @@ export function createAppShell({ ui, progressStore }) {
       return;
     }
 
-    if (checkpoint.cellId !== lastActiveCell) {
-      groupCollapsed[checkpoint.cellId] = false;
-      lastActiveCell = checkpoint.cellId;
+    const groupId = findGroupId(checkpoint.id) ?? checkpoint.cellId;
+    if (groupId !== lastActiveGroup) {
+      groupCollapsed[groupId] = false;
+      lastActiveGroup = groupId;
     }
 
     refreshChrome(state, checkpoint);
@@ -220,7 +231,8 @@ export function createAppShell({ ui, progressStore }) {
 
   function renderWorkspaceHeader(checkpoint, state) {
     const checkpointState = state.checkpoints[checkpoint.id];
-    const group = progressStore.checkpointGroups.find((entry) => entry.id === checkpoint.cellId);
+    const group = progressStore.checkpointGroups.find((entry) =>
+      entry.checkpoints.some((c) => c.id === checkpoint.id));
     const absoluteIndex = progressStore.orderedCheckpointIds.indexOf(checkpoint.id) + 1;
     const groupIndex = group?.checkpoints.findIndex((entry) => entry.id === checkpoint.id) ?? 0;
     ui.workspaceCellLabel.textContent = group?.title ?? "Learning Cell";

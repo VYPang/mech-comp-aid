@@ -431,3 +431,261 @@ body {
     min-width: 0;
   }
 }
+
+/* === PINN tutorial cell === */
+.lesson-section-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+.lesson-section-tab {
+  border-radius: 0.6rem;
+  border: 1px solid rgb(51 65 85);
+  background: rgb(15 23 42 / 0.6);
+  color: rgb(203 213 225);
+  padding: 0.45rem 0.7rem;
+  font-size: 0.78rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+.lesson-section-tab:hover {
+  border-color: rgb(34 211 238 / 0.55);
+  color: rgb(165 243 252);
+}
+.lesson-section-tab-active {
+  background: rgb(8 47 73 / 0.7);
+  border-color: rgb(34 211 238);
+  color: rgb(165 243 252);
+}
+.lesson-container {
+  margin-top: 1.25rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+.lesson-intro p {
+  color: rgb(203 213 225);
+  font-size: 0.95rem;
+  line-height: 1.65;
+  margin-bottom: 0.6rem;
+}
+.lesson-tip {
+  border-left: 3px solid rgb(34 211 238);
+  padding: 0.55rem 0.85rem;
+  background: rgb(8 47 73 / 0.35);
+  border-radius: 0.4rem;
+  color: rgb(207 250 254) !important;
+}
+.lesson-section {
+  border-top: 1px solid rgb(30 41 59);
+  padding-top: 1.25rem;
+}
+.lesson-section-title {
+  font-size: 1.15rem;
+  font-weight: 600;
+  color: rgb(248 250 252);
+  margin-bottom: 0.6rem;
+}
+.lesson-section-body p {
+  color: rgb(203 213 225);
+  font-size: 0.94rem;
+  line-height: 1.7;
+  margin-bottom: 0.7rem;
+}
+.lesson-section-body code {
+  background: rgb(15 23 42 / 0.7);
+  border: 1px solid rgb(51 65 85);
+  border-radius: 0.3rem;
+  padding: 0.05rem 0.35rem;
+  font-size: 0.86em;
+  color: rgb(165 243 252);
+}
+.lesson-section-body strong { color: rgb(248 250 252); }
+.lesson-eq {
+  text-align: center;
+  font-family: "Cambria Math", "Latin Modern Math", serif;
+  font-size: 1.05rem;
+  color: rgb(248 250 252);
+  background: rgb(2 6 23 / 0.6);
+  border: 1px solid rgb(51 65 85);
+  border-radius: 0.5rem;
+  padding: 0.6rem 0.8rem;
+  margin: 0.6rem 0;
+}
+.lesson-figure {
+  margin-top: 1rem;
+  background: rgb(2 6 23 / 0.55);
+  border: 1px solid rgb(30 41 59);
+  border-radius: 0.85rem;
+  padding: 1rem;
+}
+.lesson-figure-title {
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: rgb(165 243 252);
+  margin-bottom: 0.7rem;
+}
+.lesson-figure-body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+}
+.lesson-figure-grid {
+  display: grid;
+  gap: 1rem;
+  grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr);
+}
+@media (max-width: 900px) {
+  .lesson-figure-grid { grid-template-columns: minmax(0, 1fr); }
+}
+.lesson-figure-canvas-wrap {
+  width: 100%;
+  background: rgb(15 23 42 / 0.55);
+  border-radius: 0.6rem;
+  padding: 0.4rem;
+}
+.lesson-figure-canvas-wrap canvas { display: block; max-width: 100%; }
+.lesson-figure-sidebar {
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+  font-size: 0.85rem;
+  color: rgb(203 213 225);
+}
+.lesson-figure-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.85rem;
+  align-items: center;
+}
+.lesson-control {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  font-size: 0.78rem;
+  color: rgb(203 213 225);
+  min-width: 9rem;
+}
+.lesson-control-checkbox {
+  flex-direction: row;
+  align-items: center;
+  gap: 0.45rem;
+  min-width: 0;
+}
+.lesson-control input[type="range"] { accent-color: rgb(34 211 238); }
+.lesson-control-value {
+  font-variant-numeric: tabular-nums;
+  color: rgb(165 243 252);
+  font-weight: 600;
+}
+.lesson-button {
+  border-radius: 0.55rem;
+  border: 1px solid rgb(34 211 238);
+  background: rgb(8 47 73 / 0.7);
+  color: rgb(165 243 252);
+  padding: 0.4rem 0.8rem;
+  font-size: 0.8rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+.lesson-button:hover { background: rgb(8 47 73); }
+.lesson-button-secondary {
+  border-color: rgb(71 85 105);
+  background: rgb(15 23 42 / 0.7);
+  color: rgb(203 213 225);
+}
+.lesson-figure-caption {
+  font-size: 0.78rem;
+  color: rgb(148 163 184);
+  margin-top: 0.55rem;
+}
+.lesson-figure-hint {
+  font-size: 0.78rem;
+  color: rgb(148 163 184);
+  margin-top: 0.4rem;
+}
+.lesson-stat-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 0.25rem 0;
+  border-bottom: 1px dashed rgb(51 65 85);
+}
+.lesson-stat-row strong {
+  color: rgb(248 250 252);
+  font-variant-numeric: tabular-nums;
+}
+.lesson-callout {
+  padding: 0.5rem 0.7rem;
+  border-radius: 0.5rem;
+  font-size: 0.8rem;
+}
+.lesson-callout-good {
+  background: rgb(20 83 45 / 0.35);
+  border: 1px solid rgb(45 212 191 / 0.45);
+  color: rgb(153 246 228);
+}
+.lesson-callout-warn {
+  background: rgb(120 53 15 / 0.35);
+  border: 1px solid rgb(245 158 11 / 0.45);
+  color: rgb(253 224 71);
+}
+.lesson-matrix {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  font-family: "Cambria Math", serif;
+  margin-top: 0.4rem;
+}
+.lesson-matrix-row {
+  display: grid;
+  grid-template-columns: repeat(3, 2.5rem) 1rem 2rem 1rem 2.5rem;
+  gap: 0.2rem;
+  align-items: center;
+}
+.lesson-matrix-cell {
+  background: rgb(15 23 42 / 0.7);
+  border: 1px solid rgb(51 65 85);
+  border-radius: 0.35rem;
+  padding: 0.15rem 0.3rem;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+  font-size: 0.8rem;
+  color: rgb(248 250 252);
+}
+.lesson-matrix-eq {
+  text-align: center;
+  color: rgb(148 163 184);
+}
+.lesson-bar-row {
+  display: grid;
+  grid-template-columns: 6rem minmax(0, 1fr) 3.5rem;
+  gap: 0.4rem;
+  align-items: center;
+  font-size: 0.78rem;
+}
+.lesson-bar-track {
+  height: 0.5rem;
+  background: rgb(15 23 42 / 0.7);
+  border-radius: 999px;
+  overflow: hidden;
+}
+.lesson-bar-fill {
+  height: 100%;
+  border-radius: 999px;
+  transition: width 0.15s ease;
+}
+.lesson-bar-value {
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  color: rgb(248 250 252);
+}
+.lesson-figure-bullets {
+  margin: 0;
+  padding-left: 1.1rem;
+  color: rgb(203 213 225);
+  font-size: 0.85rem;
+  line-height: 1.55;
+}
+.lesson-coach ul { margin: 0; padding-left: 1.1rem; line-height: 1.6; }

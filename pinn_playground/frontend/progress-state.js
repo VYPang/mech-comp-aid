@@ -56,6 +56,20 @@ export const checkpointGroups = [
     description: "Reuse the same geometry to preview collocation, train the PINN, and compare back to FEM.",
     checkpoints: [
       {
+        id: "pinn-tutorial",
+        cellId: "pinnTutorial",
+        title: "PINN Tutorial",
+        subtitle: "From numerical methods to physics-informed deep learning, with seven interactive figures.",
+        controlsTitle: "Tutorial Sections",
+        controlsSubtitle: "Jump to any section, then mark complete when you have read through the figures.",
+        requirements: [
+          "Read each tutorial section.",
+          "Try the interactive figure controls.",
+          "Continue when the seven core ideas feel concrete.",
+        ],
+        completeMode: "manual",
+      },
+      {
         id: "pinn-preview",
         cellId: "pinn",
         title: "Preview Collocation Points",

@@ -1,7 +1,7 @@
-import { createPinnSocket, fetchPinnPreview, fetchTeacherPreview } from "./api.js?v=checkpoint-shell-13";
-import { buildPinnConfig, DEFAULT_PINN_CONTROLS, mergeControlValues, readPinnControlValues } from "./control-config.js?v=checkpoint-shell-13";
-import { buildPinnGuideSections } from "./guide-content.js?v=checkpoint-shell-13";
-import { renderLossPlot, renderNotePlot, renderPointCloudPlot, renderStressHeatmap, renderErrorHeatmap } from "./plots.js?v=checkpoint-shell-13";
+import { createPinnSocket, fetchPinnPreview, fetchTeacherPreview } from "./api.js?v=checkpoint-shell-14";
+import { buildPinnConfig, DEFAULT_PINN_CONTROLS, mergeControlValues, readPinnControlValues } from "./control-config.js?v=checkpoint-shell-14";
+import { buildPinnGuideSections } from "./guide-content.js?v=checkpoint-shell-14";
+import { renderLossPlot, renderNotePlot, renderPointCloudPlot, renderStressHeatmap, renderErrorHeatmap } from "./plots.js?v=checkpoint-shell-14";
 
 export function createPinnCell({ ui, runtimeState, shell }) {
   const state = {
