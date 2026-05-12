@@ -180,7 +180,7 @@ def serialize_boundary_payload(mesh: MeshTri, config: FEMProblemConfig) -> dict[
         assume_unique=False,
     )
 
-    return {
+    payload = {
         "bottom_support": _serialize_segments(
             mesh, np.asarray(mesh.boundaries.get("bottom", np.array([], dtype=int)), dtype=int)
         ),
@@ -194,6 +194,12 @@ def serialize_boundary_payload(mesh: MeshTri, config: FEMProblemConfig) -> dict[
         ),
         "internal": _serialize_segments(mesh, internal_boundary),
     }
+    payload["counts"] = {
+        name: _count_serialized_segments(value)
+        for name, value in payload.items()
+        if isinstance(value, dict) and "x" in value
+    }
+    return payload
 
 
 def _facet_midpoints(mesh: MeshTri, facets: np.ndarray) -> np.ndarray:
@@ -211,3 +217,7 @@ def _serialize_segments(mesh: MeshTri, facets: np.ndarray) -> dict[str, list[flo
         xs.extend([float(points[0, 0]), float(points[0, 1]), None])
         ys.extend([float(points[1, 0]), float(points[1, 1]), None])
     return {"x": xs, "y": ys}
+
+
+def _count_serialized_segments(payload: dict[str, list[float | None]]) -> int:
+    return sum(1 for value in payload.get("x", []) if value is None)

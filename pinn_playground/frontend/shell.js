@@ -1,7 +1,8 @@
-import { canAdvanceCheckpoint, getCompletionMessage } from "./checkpoint-rules.js?v=checkpoint-shell-12";
-import { createNumericalCell } from "./numerical-cell.js?v=checkpoint-shell-12";
-import { createPinnCell } from "./pinn-cell.js?v=checkpoint-shell-12";
-import { initializeShellPlots } from "./plots.js?v=checkpoint-shell-12";
+import { canAdvanceCheckpoint, getCompletionMessage } from "./checkpoint-rules.js?v=checkpoint-shell-13";
+import { installDiagnosticsDebugHook } from "./diagnostics.js?v=checkpoint-shell-13";
+import { createNumericalCell } from "./numerical-cell.js?v=checkpoint-shell-13";
+import { createPinnCell } from "./pinn-cell.js?v=checkpoint-shell-13";
+import { initializeShellPlots } from "./plots.js?v=checkpoint-shell-13";
 
 export function createAppShell({ ui, progressStore }) {
   const runtimeState = {
@@ -54,6 +55,8 @@ export function createAppShell({ ui, progressStore }) {
     numerical: createNumericalCell({ ui, runtimeState, shell: shellHelpers }),
     pinn: createPinnCell({ ui, runtimeState, shell: shellHelpers }),
   };
+
+  installDiagnosticsDebugHook({ runtimeState, progressStore });
 
   let mountedCheckpointId = null;
 

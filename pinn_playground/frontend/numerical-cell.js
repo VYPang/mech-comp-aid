@@ -1,17 +1,7 @@
-import { fetchFemPreview, fetchFemSolve } from "./api.js?v=checkpoint-shell-12";
-import { renderFemBoundaryPlot, renderFemDeformedPlot, renderFemMeshPlot, renderNotePlot, renderStressHeatmap } from "./plots.js?v=checkpoint-shell-12";
-
-/** Defaults when no saved state (e.g. first visit or after reset). */
-const DEFAULT_FEM_CONTROLS = {
-  geometry: "base",
-  nCells: "40",
-  frameThickness: "0.18",
-  braceHalfWidth: "0.018",
-  patchCenter: "0.50",
-  patchWidth: "0.20",
-  young: "210000000000",
-  poisson: "0.3",
-};
+import { fetchFemPreview, fetchFemSolve } from "./api.js?v=checkpoint-shell-13";
+import { buildFemConfig, DEFAULT_FEM_CONTROLS, mergeControlValues, readFemControlValues } from "./control-config.js?v=checkpoint-shell-13";
+import { buildNumericalGuideSections } from "./guide-content.js?v=checkpoint-shell-13";
+import { renderFemBoundaryPlot, renderFemDeformedPlot, renderFemMeshPlot, renderNotePlot, renderStressHeatmap } from "./plots.js?v=checkpoint-shell-13";
 
 export function createNumericalCell({ ui, runtimeState, shell }) {
   const state = {
@@ -25,26 +15,21 @@ export function createNumericalCell({ ui, runtimeState, shell }) {
   };
 
   function getMergedFemControls() {
-    return { ...DEFAULT_FEM_CONTROLS, ...(runtimeState.fem?.savedControls ?? {}) };
+    return mergeControlValues(DEFAULT_FEM_CONTROLS, runtimeState.fem?.savedControls);
   }
 
-  function captureFemControlsToRuntime() {
+  function syncFemControlsToRuntime() {
     if (!state.controls?.geometry) {
-      return;
+      return buildFemConfig(getMergedFemControls());
     }
     if (!runtimeState.fem) {
       runtimeState.fem = {};
     }
-    runtimeState.fem.savedControls = {
-      geometry: state.controls.geometry.value,
-      nCells: state.controls.nCells.value,
-      frameThickness: state.controls.frameThickness.value,
-      braceHalfWidth: state.controls.braceHalfWidth.value,
-      patchCenter: state.controls.patchCenter.value,
-      patchWidth: state.controls.patchWidth.value,
-      young: state.controls.young.value,
-      poisson: state.controls.poisson.value,
-    };
+    const values = readFemControlValues(state.controls, getMergedFemControls());
+    const config = buildFemConfig(values);
+    runtimeState.fem.savedControls = values;
+    runtimeState.fem.currentConfig = config;
+    return config;
   }
 
   function enter(checkpoint) {
@@ -59,7 +44,7 @@ export function createNumericalCell({ ui, runtimeState, shell }) {
   }
 
   function leave() {
-    captureFemControlsToRuntime();
+    syncFemControlsToRuntime();
     if (state.previewTimer) {
       window.clearTimeout(state.previewTimer);
       state.previewTimer = null;
@@ -186,6 +171,7 @@ export function createNumericalCell({ ui, runtimeState, shell }) {
     };
 
     updateValueLabels();
+    syncFemControlsToRuntime();
 
     [
       state.controls.geometry,
@@ -202,6 +188,7 @@ export function createNumericalCell({ ui, runtimeState, shell }) {
         const eventName = control.tagName === "SELECT" ? "change" : "input";
         control.addEventListener(eventName, () => {
           updateValueLabels();
+          syncFemControlsToRuntime();
           invalidateSolveResult();
           schedulePreview();
         });
@@ -227,30 +214,7 @@ export function createNumericalCell({ ui, runtimeState, shell }) {
   }
 
   function getConfig() {
-    return {
-      geometry: {
-        geometry: state.controls.geometry.value,
-        frame_thickness: Number(state.controls.frameThickness.value),
-        brace_half_width: Number(state.controls.braceHalfWidth.value),
-      },
-      material: {
-        young: Number(state.controls.young.value),
-        poisson: Number(state.controls.poisson.value),
-      },
-      support: {
-        fixed_edge: "bottom",
-      },
-      load: {
-        edge: "top",
-        patch_center: Number(state.controls.patchCenter.value),
-        patch_width: Number(state.controls.patchWidth.value),
-        traction_x: 0.0,
-        traction_y: -1.0,
-      },
-      mesh: {
-        n_cells: Number(state.controls.nCells.value),
-      },
-    };
+    return syncFemControlsToRuntime();
   }
 
   function schedulePreview() {
@@ -498,61 +462,12 @@ export function createNumericalCell({ ui, runtimeState, shell }) {
     if (!state.controls) {
       return;
     }
-
-    const notice = [];
-    const tryNext = [];
-    const why = [];
-    const nCells = Number(state.controls.nCells.value);
-    const patchWidth = Number(state.controls.patchWidth.value);
-    const geometry = state.controls.geometry.value;
-    const frameThickness = Number(state.controls.frameThickness.value);
-
-    if (nCells < 24) {
-      notice.push("The mesh is still coarse, so corners and load concentrations will be smoothed out.");
-      tryNext.push("Increase cells per side if you want a sharper stress picture.");
-    }
-    if (patchWidth < 0.10) {
-      notice.push("The top load patch is narrow, so the force is more localized.");
-    }
-    if (frameThickness > 0.24) {
-      notice.push("This is a thick frame, so added reinforcement may look less dramatic.");
-    }
-    if (geometry === "diagonal") {
-      notice.push("A single diagonal brace creates one main alternate load path.");
-    }
-    if (geometry === "x_brace") {
-      notice.push("The X-brace creates the stiffest reinforced option in this set.");
-    }
-    if (state.latestSolve && state.currentCheckpointId !== "numerical-preview") {
-      notice.push(
-        `Latest solve: max von Mises ${formatNumber(state.latestSolve.summary.max_von_mises)}, deformation scale ${formatNumber(state.latestSolve.summary.deformation_scale)}.`,
-      );
-      why.push("Use this solved field as the numerical reference before trusting a PINN prediction.");
-    }
-
-    if (runtimeState.checkpointEvents["numerical-solve"]?.status === "stale") {
-      tryNext.push("Run the FEM solve again so the result matches the current preview.");
-    }
-
-    if (state.currentCheckpointId === "numerical-preview") {
-      why.push("This step is about reading support and load placement before asking the solver for numbers.");
-    } else if (state.currentCheckpointId === "numerical-solve") {
-      tryNext.push("Solve once, then compare the deformed shape against the stress hot spots.");
-      why.push("A fast numerical baseline helps students judge whether a later PINN answer looks believable.");
-    } else {
-      tryNext.push("Compare where the frame deforms most against where the stress field peaks.");
-      why.push("This reflection step prepares the mental model you will carry into PINN training.");
-    }
-
-    if (!notice.length) {
-      notice.push("The numerical preview is ready. Check the support and top load placement before moving on.");
-    }
-
-    shell.setGuideSections([
-      { title: "What to notice", items: notice.slice(0, 3) },
-      { title: "What to try", items: tryNext.slice(0, 2) },
-      { title: "Why it matters", items: why.slice(0, 2) },
-    ]);
+    shell.setGuideSections(buildNumericalGuideSections({
+      controls: readFemControlValues(state.controls, getMergedFemControls()),
+      latestSolve: state.latestSolve,
+      currentCheckpointId: state.currentCheckpointId,
+      solveStatus: runtimeState.checkpointEvents["numerical-solve"]?.status,
+    }));
   }
 
   function _renderSummaryTable(rows) {

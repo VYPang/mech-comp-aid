@@ -32,6 +32,10 @@ export function fetchTeacherPreview(config) {
   return postJson("/api/teacher-preview", config);
 }
 
+export function fetchWebuiDiagnostics(request) {
+  return postJson("/api/diagnostics", request);
+}
+
 export function createPinnSocket() {
   const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
   return new WebSocket(`${protocol}//${window.location.host}/ws/train`);

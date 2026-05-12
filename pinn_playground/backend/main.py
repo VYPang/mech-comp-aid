@@ -9,6 +9,7 @@ from pathlib import Path
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.staticfiles import StaticFiles
 
+from pinn_playground.backend.diagnostics import WebUIDiagnosticsRequest, evaluate_webui_state
 from pinn_playground.backend.fem_geometry import build_fem_preview_payload
 from pinn_playground.backend.fem_solver import solve_fem_problem
 from pinn_playground.backend.problem_definition import FEMProblemConfig
@@ -55,6 +56,12 @@ def fem_preview(config: FEMProblemConfig) -> dict[str, object]:
 def fem_solve(config: FEMProblemConfig) -> dict[str, object]:
     """Run a static FEM solve and return deformed-mesh and stress results."""
     return solve_fem_problem(config)
+
+
+@app.post("/api/diagnostics")
+def webui_diagnostics(request: WebUIDiagnosticsRequest) -> dict[str, object]:
+    """Evaluate a WebUI state snapshot and optionally run lightweight computations."""
+    return evaluate_webui_state(request)
 
 
 @app.websocket("/ws/train")

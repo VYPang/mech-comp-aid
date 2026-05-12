@@ -1,32 +1,7 @@
-import { createPinnSocket, fetchPinnPreview, fetchTeacherPreview } from "./api.js?v=checkpoint-shell-12";
-import { renderLossPlot, renderNotePlot, renderPointCloudPlot, renderStressHeatmap, renderErrorHeatmap } from "./plots.js?v=checkpoint-shell-12";
-
-/** Defaults when no saved state (e.g. first visit or after reset). */
-const DEFAULT_PINN_CONTROLS = {
-  geometry: "base",
-  frameThickness: "0.18",
-  braceHalfWidth: "0.018",
-  patchCenter: "0.50",
-  patchWidth: "0.20",
-  young: "210000000000",
-  poisson: "0.3",
-  samplingStrategy: "uniform",
-  nDomain: "900",
-  nBoundary: "160",
-  epochs: "500",
-  normalizeInputs: true,
-  hiddenDim: "96",
-  nHiddenLayers: "5",
-  pdeWeight: "1.0",
-  bcWeight: "5.0",
-  residualResampleEvery: "200",
-  fourierFeatures: false,
-  fourierSigma: "1.0",
-  teacherInterior: "120",
-  teacherBoundary: "40",
-  teacherLoadPatch: "20",
-  teacherWeight: "10.0",
-};
+import { createPinnSocket, fetchPinnPreview, fetchTeacherPreview } from "./api.js?v=checkpoint-shell-13";
+import { buildPinnConfig, DEFAULT_PINN_CONTROLS, mergeControlValues, readPinnControlValues } from "./control-config.js?v=checkpoint-shell-13";
+import { buildPinnGuideSections } from "./guide-content.js?v=checkpoint-shell-13";
+import { renderLossPlot, renderNotePlot, renderPointCloudPlot, renderStressHeatmap, renderErrorHeatmap } from "./plots.js?v=checkpoint-shell-13";
 
 export function createPinnCell({ ui, runtimeState, shell }) {
   const state = {
@@ -52,41 +27,21 @@ export function createPinnCell({ ui, runtimeState, shell }) {
   };
 
   function getMergedPinnControls() {
-    return { ...DEFAULT_PINN_CONTROLS, ...(runtimeState.pinn?.savedControls ?? {}) };
+    return mergeControlValues(DEFAULT_PINN_CONTROLS, runtimeState.pinn?.savedControls);
   }
 
-  function capturePinnControlsToRuntime() {
+  function syncPinnControlsToRuntime() {
     if (!state.controls?.geometry) {
-      return;
+      return buildPinnConfig(getMergedPinnControls(), { teacherEnabled: false });
     }
     if (!runtimeState.pinn) {
       runtimeState.pinn = {};
     }
-    runtimeState.pinn.savedControls = {
-      geometry: state.controls.geometry.value,
-      frameThickness: state.controls.frameThickness.value,
-      braceHalfWidth: state.controls.braceHalfWidth.value,
-      patchCenter: state.controls.patchCenter.value,
-      patchWidth: state.controls.patchWidth.value,
-      young: state.controls.young.value,
-      poisson: state.controls.poisson.value,
-      samplingStrategy: state.controls.samplingStrategy.value,
-      nDomain: state.controls.nDomain.value,
-      nBoundary: state.controls.nBoundary.value,
-      epochs: state.controls.epochs.value,
-      normalizeInputs: state.controls.normalizeInputs.checked,
-      hiddenDim: state.controls.hiddenDim.value,
-      nHiddenLayers: state.controls.nHiddenLayers.value,
-      pdeWeight: state.controls.pdeWeight.value,
-      bcWeight: state.controls.bcWeight.value,
-      residualResampleEvery: state.controls.residualResampleEvery.value,
-      fourierFeatures: state.controls.fourierFeatures.checked,
-      fourierSigma: state.controls.fourierSigma.value,
-      teacherInterior: state.controls.teacherInterior?.value ?? DEFAULT_PINN_CONTROLS.teacherInterior,
-      teacherBoundary: state.controls.teacherBoundary?.value ?? DEFAULT_PINN_CONTROLS.teacherBoundary,
-      teacherLoadPatch: state.controls.teacherLoadPatch?.value ?? DEFAULT_PINN_CONTROLS.teacherLoadPatch,
-      teacherWeight: state.controls.teacherWeight?.value ?? DEFAULT_PINN_CONTROLS.teacherWeight,
-    };
+    const values = readPinnControlValues(state.controls, getMergedPinnControls());
+    const config = buildPinnConfig(values, { teacherEnabled: state.currentCheckpointId === "pinn-teacher" });
+    runtimeState.pinn.savedControls = values;
+    runtimeState.pinn.currentConfig = config;
+    return config;
   }
 
   function enter(checkpoint) {
@@ -101,7 +56,7 @@ export function createPinnCell({ ui, runtimeState, shell }) {
   }
 
   function leave() {
-    capturePinnControlsToRuntime();
+    syncPinnControlsToRuntime();
     if (state.previewTimer) {
       window.clearTimeout(state.previewTimer);
       state.previewTimer = null;
@@ -431,6 +386,7 @@ export function createPinnCell({ ui, runtimeState, shell }) {
     };
 
     updateValueLabels();
+  syncPinnControlsToRuntime();
 
     const controls = [
       state.controls.geometry,
@@ -462,6 +418,7 @@ export function createPinnCell({ ui, runtimeState, shell }) {
       const eventName = control.tagName === "SELECT" ? "change" : "input";
       control.addEventListener(eventName, () => {
         updateValueLabels();
+        syncPinnControlsToRuntime();
         schedulePreview();
       });
     });
@@ -511,52 +468,7 @@ export function createPinnCell({ ui, runtimeState, shell }) {
   }
 
   function getConfig() {
-    return {
-      problem: {
-        geometry: {
-          geometry: state.controls.geometry.value,
-          frame_thickness: Number(state.controls.frameThickness.value),
-          brace_half_width: Number(state.controls.braceHalfWidth.value),
-        },
-        material: {
-          young: Number(state.controls.young.value),
-          poisson: Number(state.controls.poisson.value),
-        },
-        support: {
-          fixed_edge: "bottom",
-        },
-        load: {
-          edge: "top",
-          patch_center: Number(state.controls.patchCenter.value),
-          patch_width: Number(state.controls.patchWidth.value),
-          traction_x: 0.0,
-          traction_y: -1.0,
-        },
-      },
-      sampling_strategy: state.controls.samplingStrategy.value,
-      n_domain: Number(state.controls.nDomain.value),
-      n_boundary: Number(state.controls.nBoundary.value),
-      epochs: Number(state.controls.epochs.value),
-      normalize_inputs: state.controls.normalizeInputs.checked,
-      pde_weight: Number(state.controls.pdeWeight.value),
-      bc_weight: Number(state.controls.bcWeight.value),
-      hidden_dim: Number(state.controls.hiddenDim.value),
-      n_hidden_layers: Number(state.controls.nHiddenLayers.value),
-      residual_resample_every: Number(state.controls.residualResampleEvery.value),
-      fourier_features: state.controls.fourierFeatures.checked,
-      fourier_sigma: Number(state.controls.fourierSigma.value),
-      teacher: {
-        enabled: state.currentCheckpointId === "pinn-teacher",
-        n_interior: Number(state.controls.teacherInterior?.value ?? DEFAULT_PINN_CONTROLS.teacherInterior),
-        n_boundary: Number(state.controls.teacherBoundary?.value ?? DEFAULT_PINN_CONTROLS.teacherBoundary),
-        n_load_patch: Number(state.controls.teacherLoadPatch?.value ?? DEFAULT_PINN_CONTROLS.teacherLoadPatch),
-        weight: Number(state.controls.teacherWeight?.value ?? DEFAULT_PINN_CONTROLS.teacherWeight),
-      },
-      learning_rate: 0.001,
-      update_every: 50,
-      stress_grid_n: 60,
-      seed: 0,
-    };
+    return syncPinnControlsToRuntime();
   }
 
   function schedulePreview() {
@@ -1024,87 +936,12 @@ export function createPinnCell({ ui, runtimeState, shell }) {
       return;
     }
 
-    const config = getConfig();
-    const notice = [];
-    const tryNext = [];
-    const why = [];
-
-    if (!config.normalize_inputs) {
-      notice.push("Normalization is off, which usually makes optimization less stable.");
-    }
-    if (config.n_domain < 400) {
-      notice.push("Domain density is low, so the interior field may look patchy or misleading.");
-    }
-    if (config.n_boundary < 80) {
-      notice.push("Boundary sampling is sparse, so supports and loading may be learned less reliably.");
-    }
-    if (config.sampling_strategy === "adaptive") {
-      notice.push("Adaptive sampling concentrates more points near corners and brace joints.");
-    }
-    if (config.problem.geometry.geometry === "diagonal") {
-      notice.push("A single diagonal brace creates one alternate load path across the opening.");
-    }
-    if (config.problem.geometry.geometry === "x_brace") {
-      notice.push("The X-brace is usually the stiffest reinforcement in this geometry set.");
-    }
-    if (config.problem.load.patch_width < 0.1) {
-      notice.push("The traction patch is narrow, so the learned stress field should become more localized near the top edge.");
-    }
-    if (config.problem.geometry.frame_thickness > 0.26) {
-      notice.push("A thicker frame leaves a smaller opening, which can reduce the visible effect of reinforcement changes.");
-    }
-    if (config.pde_weight < 0.8) {
-      tryNext.push("Raise PDE weight if the model fits the boundary but struggles inside the domain.");
-    }
-    if (config.bc_weight < 1.0) {
-      tryNext.push("Raise BC weight if support or loading conditions look poorly enforced.");
-    }
-
-    if (state.latestMetrics) {
-      const { total_loss: totalLoss, pde_loss: pdeLoss, bc_loss: bcLoss } = state.latestMetrics;
-      if (totalLoss > 5) {
-        notice.push("Total loss is still high, so the PINN has not settled yet.");
-      }
-      if (bcLoss > pdeLoss * 2) {
-        notice.push("Boundary loss dominates, so the supports or loading are harder than the interior PDE right now.");
-      }
-      if (pdeLoss > bcLoss * 2) {
-        notice.push("Physics loss dominates, so equilibrium is the harder part of the problem right now.");
-      }
-      why.push(`Latest loss snapshot: total ${formatMetric(totalLoss)}, PDE ${formatMetric(pdeLoss)}, BC ${formatMetric(bcLoss)}.`);
-    }
-
-    if (state.currentCheckpointId === "pinn-preview") {
-      notice.push("This step is for understanding the point cloud before you train.");
-      tryNext.push("Compare uniform and adaptive sampling before moving on.");
-      why.push("Seeing the collocation cloud first makes it easier to judge whether the PINN is sampling the same structural case as the numerical baseline.");
-    } else if (state.isTraining) {
-      tryNext.push("Let the run progress for a few epochs before judging the stress map.");
-      why.push("The live curves show whether the PINN is balancing equilibrium with the shared support and traction boundary conditions.");
-    } else if (state.currentCheckpointId === "pinn-train") {
-      tryNext.push("Change one setting at a time, then start another run to see what moved the curves.");
-      why.push("Short, repeated experiments help students learn which settings change convergence.");
-    }
-
-    if (!notice.length) {
-      notice.push("This setup is balanced enough to begin a teaching run.");
-    }
-
-    if (!why.length) {
-      why.push("The goal is not only to train a PINN, but to judge when its answer is believable.");
-    }
-
-    shell.setGuideSections([
-      { title: "What to notice", items: notice.slice(0, 3) },
-      { title: "What to try", items: tryNext.slice(0, 2) },
-      { title: "Why it matters", items: why.slice(0, 2) },
-    ]);
-  }
-
-  function renderCompareCheckpoint(_checkpoint) {
-    // The former `pinn-compare` placeholder was replaced by the active
-    // `pinn-teacher` checkpoint. This stub is kept only to avoid breaking
-    // external references; it is no longer wired into any enter() path.
+    shell.setGuideSections(buildPinnGuideSections({
+      config: getConfig(),
+      latestMetrics: state.latestMetrics,
+      currentCheckpointId: state.currentCheckpointId,
+      isTraining: state.isTraining,
+    }));
   }
 
   return {
