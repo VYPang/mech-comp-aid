@@ -122,32 +122,60 @@ export function createQuadraticFigure(container) {
         y = ${sign(a, true)}${Math.abs(a).toFixed(3)} x² ${sign(b)}${Math.abs(b).toFixed(3)} x ${sign(c)}${Math.abs(c).toFixed(3)}
       </div>
       <div class="lesson-matrix">
-        <div class="lesson-matrix-row">
-          <span class="lesson-matrix-cell">${fmt(state.points[0].x ** 2)}</span>
-          <span class="lesson-matrix-cell">${fmt(state.points[0].x)}</span>
-          <span class="lesson-matrix-cell">1</span>
-          <span class="lesson-matrix-eq">·</span>
-          <span class="lesson-matrix-cell">a</span>
-          <span class="lesson-matrix-eq">=</span>
-          <span class="lesson-matrix-cell">${fmt(state.points[0].y)}</span>
-        </div>
-        <div class="lesson-matrix-row">
-          <span class="lesson-matrix-cell">${fmt(state.points[1].x ** 2)}</span>
-          <span class="lesson-matrix-cell">${fmt(state.points[1].x)}</span>
-          <span class="lesson-matrix-cell">1</span>
-          <span class="lesson-matrix-eq"></span>
-          <span class="lesson-matrix-cell">b</span>
-          <span class="lesson-matrix-eq"></span>
-          <span class="lesson-matrix-cell">${fmt(state.points[1].y)}</span>
-        </div>
-        <div class="lesson-matrix-row">
-          <span class="lesson-matrix-cell">${fmt(state.points[2].x ** 2)}</span>
-          <span class="lesson-matrix-cell">${fmt(state.points[2].x)}</span>
-          <span class="lesson-matrix-cell">1</span>
-          <span class="lesson-matrix-eq"></span>
-          <span class="lesson-matrix-cell">c</span>
-          <span class="lesson-matrix-eq"></span>
-          <span class="lesson-matrix-cell">${fmt(state.points[2].y)}</span>
+        <div class="lesson-matrix-system">
+          <div class="lesson-matrix-block">
+            <span class="lesson-matrix-bracket lesson-matrix-bracket-left" aria-hidden="true"></span>
+            <div class="lesson-matrix-values">
+              <div class="lesson-matrix-row lesson-matrix-row-compact">
+                <span class="lesson-matrix-cell">${fmt(state.points[0].x ** 2)}</span>
+                <span class="lesson-matrix-cell">${fmt(state.points[0].x)}</span>
+                <span class="lesson-matrix-cell">1</span>
+              </div>
+              <div class="lesson-matrix-row lesson-matrix-row-compact">
+                <span class="lesson-matrix-cell">${fmt(state.points[1].x ** 2)}</span>
+                <span class="lesson-matrix-cell">${fmt(state.points[1].x)}</span>
+                <span class="lesson-matrix-cell">1</span>
+              </div>
+              <div class="lesson-matrix-row lesson-matrix-row-compact">
+                <span class="lesson-matrix-cell">${fmt(state.points[2].x ** 2)}</span>
+                <span class="lesson-matrix-cell">${fmt(state.points[2].x)}</span>
+                <span class="lesson-matrix-cell">1</span>
+              </div>
+            </div>
+            <span class="lesson-matrix-bracket lesson-matrix-bracket-right" aria-hidden="true"></span>
+          </div>
+          <span class="lesson-matrix-operator">·</span>
+          <div class="lesson-matrix-block">
+            <span class="lesson-matrix-bracket lesson-matrix-bracket-left" aria-hidden="true"></span>
+            <div class="lesson-matrix-values">
+              <div class="lesson-matrix-row lesson-matrix-row-vector">
+                <span class="lesson-matrix-cell">a</span>
+              </div>
+              <div class="lesson-matrix-row lesson-matrix-row-vector">
+                <span class="lesson-matrix-cell">b</span>
+              </div>
+              <div class="lesson-matrix-row lesson-matrix-row-vector">
+                <span class="lesson-matrix-cell">c</span>
+              </div>
+            </div>
+            <span class="lesson-matrix-bracket lesson-matrix-bracket-right" aria-hidden="true"></span>
+          </div>
+          <span class="lesson-matrix-operator">=</span>
+          <div class="lesson-matrix-block">
+            <span class="lesson-matrix-bracket lesson-matrix-bracket-left" aria-hidden="true"></span>
+            <div class="lesson-matrix-values">
+              <div class="lesson-matrix-row lesson-matrix-row-vector">
+                <span class="lesson-matrix-cell">${fmt(state.points[0].y)}</span>
+              </div>
+              <div class="lesson-matrix-row lesson-matrix-row-vector">
+                <span class="lesson-matrix-cell">${fmt(state.points[1].y)}</span>
+              </div>
+              <div class="lesson-matrix-row lesson-matrix-row-vector">
+                <span class="lesson-matrix-cell">${fmt(state.points[2].y)}</span>
+              </div>
+            </div>
+            <span class="lesson-matrix-bracket lesson-matrix-bracket-right" aria-hidden="true"></span>
+          </div>
         </div>
       </div>
       <p class="lesson-figure-hint">Three equations, three unknowns. The drawing math never touches pixels — pixel mapping happens once in <code>mapToCanvas</code>.</p>

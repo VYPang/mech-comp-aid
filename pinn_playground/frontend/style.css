@@ -638,11 +638,33 @@ body {
   font-family: "Cambria Math", serif;
   margin-top: 0.4rem;
 }
+.lesson-matrix-system {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  flex-wrap: nowrap;
+}
+.lesson-matrix-block {
+  display: flex;
+  align-items: stretch;
+  gap: 0.15rem;
+}
+.lesson-matrix-values {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
 .lesson-matrix-row {
   display: grid;
   grid-template-columns: repeat(3, 2.5rem) 1rem 2rem 1rem 2.5rem;
   gap: 0.2rem;
   align-items: center;
+}
+.lesson-matrix-row-compact {
+  grid-template-columns: repeat(3, 2.5rem);
+}
+.lesson-matrix-row-vector {
+  grid-template-columns: 2.5rem;
 }
 .lesson-matrix-cell {
   background: rgb(15 23 42 / 0.7);
@@ -657,6 +679,36 @@ body {
 .lesson-matrix-eq {
   text-align: center;
   color: rgb(148 163 184);
+}
+.lesson-matrix-bracket {
+  position: relative;
+  width: 0.55rem;
+  flex: 0 0 0.55rem;
+}
+.lesson-matrix-bracket::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+}
+.lesson-matrix-bracket-left::before {
+  border-left: 2px solid rgb(148 163 184);
+  border-top: 2px solid rgb(148 163 184);
+  border-bottom: 2px solid rgb(148 163 184);
+  border-top-left-radius: 0.15rem;
+  border-bottom-left-radius: 0.15rem;
+}
+.lesson-matrix-bracket-right::before {
+  border-right: 2px solid rgb(148 163 184);
+  border-top: 2px solid rgb(148 163 184);
+  border-bottom: 2px solid rgb(148 163 184);
+  border-top-right-radius: 0.15rem;
+  border-bottom-right-radius: 0.15rem;
+}
+.lesson-matrix-operator {
+  width: 1rem;
+  text-align: center;
+  color: rgb(148 163 184);
+  font-size: 1.2rem;
 }
 .lesson-bar-row {
   display: grid;

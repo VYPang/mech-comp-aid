@@ -28,6 +28,25 @@ app = FastAPI(
 )
 
 
+@app.middleware("http")
+async def disable_frontend_caching(request, call_next):
+    """Serve the local frontend as non-cacheable during development.
+
+    The UI is a graph of ES modules referenced by stable URLs. Without explicit
+    no-cache headers, browsers can keep using stale JS/CSS/HTML even after the
+    backend restarts, unless we manually bump query-string versions.
+    """
+    response = await call_next(request)
+    path = request.url.path
+    if path.startswith("/api") or path.startswith("/ws") or path == "/health":
+        return response
+
+    response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+    response.headers["Pragma"] = "no-cache"
+    response.headers["Expires"] = "0"
+    return response
+
+
 @app.get("/health")
 def health() -> dict[str, str]:
     """Liveness check for load balancers and local dev."""

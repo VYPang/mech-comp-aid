@@ -31,7 +31,7 @@ function generate(seed, n, sigma) {
 export function createGeneralizationFigure(container) {
   const { body } = buildFigureShell(container, {
     title: "Figure 3 - Capacity vs generalization",
-    caption: "Drag the cursor to query a new x. Compare the prediction to the hidden test points.",
+    caption: "Drag the cursor to query a new x. Compare the prediction to the true curve and the sampled test points.",
   });
 
   const controls = document.createElement("div");
@@ -41,6 +41,11 @@ export function createGeneralizationFigure(container) {
       <span>Capacity (degree)</span>
       <input type="range" min="1" max="10" step="1" value="3" data-role="degree" />
       <span class="lesson-control-value" data-role="degree-value">3</span>
+    </label>
+    <label class="lesson-control">
+      <span>Train samples</span>
+      <input type="range" min="6" max="20" step="1" value="8" data-role="train-samples" />
+      <span class="lesson-control-value" data-role="train-samples-value">8</span>
     </label>
     <label class="lesson-control lesson-control-checkbox">
       <input type="checkbox" data-role="show-test" checked /> Show test points
@@ -60,6 +65,8 @@ export function createGeneralizationFigure(container) {
   body.appendChild(layout);
 
   const state = {
+    trainSeed: 11,
+    trainCount: 8,
     train: generate(11, 8, 0.45),
     test: generate(99, 30, 0.45),
     degree: 3,
@@ -108,11 +115,25 @@ export function createGeneralizationFigure(container) {
     ctx.clearRect(0, 0, width, height);
     drawAxes(ctx, mapper);
 
+    // True underlying curve.
+    ctx.beginPath();
+    ctx.lineWidth = 1.5;
+    ctx.setLineDash([6, 5]);
+    ctx.strokeStyle = "rgba(226, 232, 240, 0.95)";
+    const steps = 240;
+    for (let i = 0; i <= steps; i += 1) {
+      const x = x0 + (x1 - x0) * (i / steps);
+      const y = polyEval(TRUE_COEFFS, x);
+      const [px, py] = mapper.toPx(x, y);
+      if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+    }
+    ctx.stroke();
+    ctx.setLineDash([]);
+
     // Fitted curve
     ctx.beginPath();
     ctx.lineWidth = 2;
     ctx.strokeStyle = "rgb(34, 211, 238)";
-    const steps = 240;
     for (let i = 0; i <= steps; i += 1) {
       const x = x0 + (x1 - x0) * (i / steps);
       const y = polyEval(state.coeffs, x);
@@ -157,18 +178,37 @@ export function createGeneralizationFigure(container) {
     ctx.stroke();
     ctx.restore();
     const [, qPy] = mapper.toPx(state.queryX, qy);
+    const [, trueQPy] = mapper.toPx(state.queryX, trueQy);
+    ctx.beginPath();
+    ctx.strokeStyle = "rgba(250, 204, 21, 0.95)";
+    ctx.lineWidth = 3;
+    ctx.moveTo(qPx, qPy);
+    ctx.lineTo(qPx, trueQPy);
+    ctx.stroke();
+
     ctx.beginPath();
     ctx.fillStyle = "rgb(244, 114, 182)";
     ctx.arc(qPx, qPy, 6, 0, Math.PI * 2);
     ctx.fill();
 
+    ctx.beginPath();
+    ctx.fillStyle = "rgb(248, 250, 252)";
+    ctx.strokeStyle = "rgb(15, 23, 42)";
+    ctx.lineWidth = 1.5;
+    ctx.arc(qPx, trueQPy, 5, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+
+    const localLoss = (qy - trueQy) ** 2;
     sidebar.innerHTML = `
       <div class="lesson-stat-row"><span>Train MSE</span><strong>${state.trainMse.toFixed(3)}</strong></div>
       <div class="lesson-stat-row"><span>Test MSE</span><strong>${state.testMse.toFixed(3)}</strong></div>
+      <div class="lesson-stat-row"><span>Train samples</span><strong>${state.trainCount}</strong></div>
       <div class="lesson-stat-row"><span>Query x</span><strong>${state.queryX.toFixed(2)}</strong></div>
       <div class="lesson-stat-row"><span>Model y</span><strong>${qy.toFixed(3)}</strong></div>
       <div class="lesson-stat-row"><span>True y</span><strong>${trueQy.toFixed(3)}</strong></div>
-      <p class="lesson-figure-hint">Train loss falls smoothly with capacity. Test loss can rise sharply once the model starts chasing noise.</p>
+      <div class="lesson-stat-row"><span>Local loss term</span><strong>${localLoss.toFixed(3)}</strong></div>
+      <p class="lesson-figure-hint">Dashed white: true curve. Pink point: model prediction at the query x. White point: true y. The yellow vertical gap is the local squared-error contribution ${(qy - trueQy).toFixed(3)}².</p>
     `;
   }
 
@@ -177,10 +217,19 @@ export function createGeneralizationFigure(container) {
     fit();
     const degreeInput = controls.querySelector("[data-role=degree]");
     const degreeValue = controls.querySelector("[data-role=degree-value]");
+    const sampleInput = controls.querySelector("[data-role=train-samples]");
+    const sampleValue = controls.querySelector("[data-role=train-samples-value]");
     const showTest = controls.querySelector("[data-role=show-test]");
     degreeInput.addEventListener("input", () => {
       state.degree = parseInt(degreeInput.value, 10);
       degreeValue.textContent = String(state.degree);
+      fit();
+      scheduleDraw();
+    });
+    sampleInput.addEventListener("input", () => {
+      state.trainCount = parseInt(sampleInput.value, 10);
+      sampleValue.textContent = String(state.trainCount);
+      state.train = generate(state.trainSeed, state.trainCount, 0.45);
       fit();
       scheduleDraw();
     });

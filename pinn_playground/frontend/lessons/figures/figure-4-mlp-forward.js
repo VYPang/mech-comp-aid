@@ -137,16 +137,16 @@ export function createMlpForwardFigure(container) {
     }));
 
     // edges
-    ctx.lineWidth = 1;
     for (let ci = 1; ci < acts.length; ci += 1) {
       const layer = state.layers[ci - 1];
       for (let r = 0; r < layer.W.length; r += 1) {
         for (let c = 0; c < layer.W[r].length; c += 1) {
           const w = layer.W[r][c];
-          const alpha = Math.min(0.7, Math.abs(w) * 0.35);
+          const thickness = 0.5 + Math.min(6.5, Math.abs(w) ** 1.2 * 4.8);
+          ctx.lineWidth = thickness;
           ctx.strokeStyle = w >= 0
-            ? `rgba(34, 211, 238, ${alpha})`
-            : `rgba(244, 114, 182, ${alpha})`;
+            ? "rgba(34, 211, 238, 0.82)"
+            : "rgba(244, 114, 182, 0.82)";
           const [x1, y1] = positions[ci - 1][c];
           const [x2, y2] = positions[ci][r];
           ctx.beginPath();
