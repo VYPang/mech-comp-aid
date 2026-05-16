@@ -79,9 +79,8 @@ export function createTutorialCell({ ui, shell }) {
     ui.controlsForm.querySelectorAll("[data-section-id]").forEach((btn) => {
       btn.addEventListener("click", () => {
         state.activeSectionId = btn.dataset.sectionId;
-        const target = document.getElementById(`tutorial-${state.activeSectionId}`);
-        if (target) target.scrollIntoView({ behavior: "smooth", block: "start" });
         updateActiveTab();
+        renderTutorialBody();
       });
     });
     updateActiveTab();
@@ -95,58 +94,47 @@ export function createTutorialCell({ ui, shell }) {
 
   function renderTutorialBody() {
     destroyFigures();
-    if (state.container) state.container.remove();
-    const container = document.createElement("section");
-    container.id = "tutorial-container";
-    container.className = "lesson-container rounded-2xl border border-slate-800 bg-slate-900/80 p-5 shadow-lg";
+    const activeSection = TUTORIAL_SECTIONS.find((section) => section.id === state.activeSectionId) ?? TUTORIAL_SECTIONS[0];
+    let container = state.container;
+    if (!container) {
+      container = document.createElement("section");
+      container.id = "tutorial-container";
+      container.className = "lesson-container rounded-2xl border border-slate-800 bg-slate-900/80 p-5 shadow-lg";
+
+      const mainCol = ui.controlsForm.closest("section")?.parentElement;
+      if (mainCol) {
+        mainCol.appendChild(container);
+      } else {
+        document.body.appendChild(container);
+      }
+      state.container = container;
+    }
+
     container.innerHTML = `
       <div class="lesson-intro">${TUTORIAL_INTRO}</div>
-      ${TUTORIAL_SECTIONS.map((section) => `
-        <article id="tutorial-${section.id}" class="lesson-section">
-          <h3 class="lesson-section-title">${section.title}</h3>
-          <div class="lesson-section-body">${section.body}</div>
-          ${section.figureFactory ? `<div class="lesson-figure-host" data-figure-id="${section.id}"></div>` : ""}
-        </article>
-      `).join("")}
+      <article id="tutorial-${activeSection.id}" class="lesson-section">
+        <h3 class="lesson-section-title">${activeSection.title}</h3>
+        <div class="lesson-section-body">${activeSection.body}</div>
+        ${activeSection.figureFactory ? `<div class="lesson-figure-host" data-figure-id="${activeSection.id}"></div>` : ""}
+      </article>
     `;
 
-    // Insert the tutorial container into the main workspace area.
-    const mainCol = ui.controlsForm.closest("section")?.parentElement;
-    if (mainCol) {
-      mainCol.appendChild(container);
-    } else {
-      document.body.appendChild(container);
+    if (!activeSection.figureFactory) {
+      return;
     }
-    state.container = container;
 
-    // Mount figures.
-    TUTORIAL_SECTIONS.forEach((section) => {
-      if (!section.figureFactory) return;
-      const host = container.querySelector(`[data-figure-id="${section.id}"]`);
-      if (!host) return;
-      try {
-        state.figureInstances.set(section.id, section.figureFactory(host));
-      } catch (err) {
-        host.innerHTML = `<div class="lesson-callout lesson-callout-warn">Figure failed to load: ${err?.message ?? err}</div>`;
-        // Surface to console for diagnostics.
-        // eslint-disable-next-line no-console
-        console.error("Tutorial figure failed", section.id, err);
-      }
-    });
+    const host = container.querySelector(`[data-figure-id="${activeSection.id}"]`);
+    if (!host) {
+      return;
+    }
 
-    // Track active section as the user scrolls.
-    const observer = new IntersectionObserver((entries) => {
-      const visible = entries.filter((e) => e.isIntersecting)
-        .sort((a, b) => b.intersectionRatio - a.intersectionRatio)[0];
-      if (!visible) return;
-      const id = visible.target.id.replace(/^tutorial-/, "");
-      if (id !== state.activeSectionId) {
-        state.activeSectionId = id;
-        updateActiveTab();
-      }
-    }, { rootMargin: "-30% 0px -55% 0px", threshold: [0.05, 0.4, 0.8] });
-    container.querySelectorAll(".lesson-section").forEach((sec) => observer.observe(sec));
-    state.scrollObserver = observer;
+    try {
+      state.figureInstances.set(activeSection.id, activeSection.figureFactory(host));
+    } catch (err) {
+      host.innerHTML = `<div class="lesson-callout lesson-callout-warn">Figure failed to load: ${err?.message ?? err}</div>`;
+      // eslint-disable-next-line no-console
+      console.error("Tutorial figure failed", activeSection.id, err);
+    }
   }
 
   return { enter, leave };

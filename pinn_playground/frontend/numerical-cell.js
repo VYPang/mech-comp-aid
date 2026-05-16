@@ -1,5 +1,5 @@
 import { fetchFemPreview, fetchFemSolve } from "./api.js?v=checkpoint-shell-14";
-import { buildFemConfig, DEFAULT_FEM_CONTROLS, mergeControlValues, readFemControlValues } from "./control-config.js?v=checkpoint-shell-14";
+import { buildFemConfig, DEFAULT_FEM_CONTROLS, mergeControlValues, mergeSharedStructuralValues, pickSharedStructuralValues, readFemControlValues } from "./control-config.js?v=checkpoint-shell-14";
 import { buildNumericalGuideSections } from "./guide-content.js?v=checkpoint-shell-14";
 import { renderFemBoundaryPlot, renderFemDeformedPlot, renderFemMeshPlot, renderNotePlot, renderStressHeatmap } from "./plots.js?v=checkpoint-shell-14";
 
@@ -31,7 +31,10 @@ export function createNumericalCell({ ui, runtimeState, shell }) {
   }
 
   function getMergedFemControls() {
-    return mergeControlValues(DEFAULT_FEM_CONTROLS, runtimeState.fem?.savedControls);
+    return mergeSharedStructuralValues(
+      mergeControlValues(DEFAULT_FEM_CONTROLS, runtimeState.fem?.savedControls),
+      runtimeState.sharedStructuralControls,
+    );
   }
 
   function syncFemControlsToRuntime() {
@@ -45,6 +48,7 @@ export function createNumericalCell({ ui, runtimeState, shell }) {
     const config = buildFemConfig(values);
     runtimeState.fem.savedControls = values;
     runtimeState.fem.currentConfig = config;
+    runtimeState.sharedStructuralControls = pickSharedStructuralValues(values);
     return config;
   }
 
@@ -82,7 +86,7 @@ export function createNumericalCell({ ui, runtimeState, shell }) {
   function renderControls(checkpoint) {
     const v = getMergedFemControls();
     ui.controlsForm.innerHTML = `
-      <details class="toggle-panel" open>
+      <details class="toggle-panel">
         <summary>Geometry</summary>
         <div class="control-section-grid mt-4 lg:grid-cols-2">
           <div class="control-card">
@@ -113,7 +117,7 @@ export function createNumericalCell({ ui, runtimeState, shell }) {
         </div>
       </details>
 
-      <details class="toggle-panel" open>
+      <details class="toggle-panel">
         <summary>Top Load Patch</summary>
         <div class="control-section-grid mt-4 lg:grid-cols-2">
           <div class="control-card">

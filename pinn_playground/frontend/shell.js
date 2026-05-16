@@ -9,6 +9,7 @@ export function createAppShell({ ui, progressStore }) {
   const runtimeState = {
     checkpointEvents: {},
     taskProgress: {},
+    sharedStructuralControls: null,
     fem: {},
     pinn: {},
   };
@@ -102,6 +103,7 @@ export function createAppShell({ ui, progressStore }) {
     Object.values(cells).forEach((cell) => cell.reset?.());
     runtimeState.checkpointEvents = {};
     runtimeState.taskProgress = {};
+    runtimeState.sharedStructuralControls = null;
     runtimeState.fem = {};
     runtimeState.pinn = {};
     progressStore.reset();
@@ -254,8 +256,16 @@ export function createAppShell({ ui, progressStore }) {
   }
 
   function renderCoachPanel(checkpoint) {
+    const tasksBlock = ui.requirementsList?.parentElement;
     if (ui.guideBox) {
       ui.guideBox.style.display = checkpoint.cellId === "pinnTutorial" ? "" : "none";
+    }
+    if (tasksBlock) {
+      tasksBlock.style.display = checkpoint.cellId === "pinnTutorial" ? "none" : "";
+    }
+
+    if (checkpoint.cellId === "pinnTutorial") {
+      return;
     }
 
     const tasks = Array.isArray(checkpoint.tasks) ? checkpoint.tasks : [];

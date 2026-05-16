@@ -1,7 +1,9 @@
 import { createPinnSocket, fetchPinnPreview, fetchTeacherPreview } from "./api.js?v=checkpoint-shell-14";
-import { buildPinnConfig, DEFAULT_PINN_CONTROLS, mergeControlValues, readPinnControlValues } from "./control-config.js?v=checkpoint-shell-14";
+import { buildPinnConfig, DEFAULT_PINN_CONTROLS, mergeControlValues, mergeSharedStructuralValues, pickSharedStructuralValues, readPinnControlValues } from "./control-config.js?v=checkpoint-shell-14";
 import { buildPinnGuideSections } from "./guide-content.js?v=checkpoint-shell-14";
 import { renderLossPlot, renderNotePlot, renderPointCloudPlot, renderStressHeatmap, renderErrorHeatmap } from "./plots.js?v=checkpoint-shell-14";
+
+const PINN_SESSION_CHECKPOINT_ID = "pinn-session";
 
 export function createPinnCell({ ui, runtimeState, shell }) {
   const state = {
@@ -24,32 +26,52 @@ export function createPinnCell({ ui, runtimeState, shell }) {
     activeBottomTab: "training-curve",
     teacherPoints: null,
     teacherPreviewTimer: null,
+    teacherLocked: true,
+    taskState: createInitialTaskState(),
   };
 
+  function createInitialTaskState() {
+    return {
+      previewReady: false,
+      trainingObserved: false,
+      comparisonViewed: false,
+    };
+  }
+
+  function isTeacherUnlocked() {
+    return !state.teacherLocked;
+  }
+
   function getMergedPinnControls() {
-    return mergeControlValues(DEFAULT_PINN_CONTROLS, runtimeState.pinn?.savedControls);
+    return mergeSharedStructuralValues(
+      mergeControlValues(DEFAULT_PINN_CONTROLS, runtimeState.pinn?.savedControls),
+      runtimeState.sharedStructuralControls,
+    );
   }
 
   function syncPinnControlsToRuntime() {
     if (!state.controls?.geometry) {
-      return buildPinnConfig(getMergedPinnControls(), { teacherEnabled: false });
+      return buildPinnConfig(getMergedPinnControls(), { teacherEnabled: isTeacherUnlocked() });
     }
     if (!runtimeState.pinn) {
       runtimeState.pinn = {};
     }
     const values = readPinnControlValues(state.controls, getMergedPinnControls());
-    const config = buildPinnConfig(values, { teacherEnabled: state.currentCheckpointId === "pinn-teacher" });
+    const config = buildPinnConfig(values, { teacherEnabled: isTeacherUnlocked() });
     runtimeState.pinn.savedControls = values;
     runtimeState.pinn.currentConfig = config;
+    runtimeState.sharedStructuralControls = pickSharedStructuralValues(values);
     return config;
   }
 
   function enter(checkpoint) {
     state.currentCheckpointId = checkpoint.id;
+    state.teacherLocked = Boolean(checkpoint.teacherLocked);
     renderControls(checkpoint);
     state.teacherPoints = null;
+    updateTaskProgress();
     schedulePreview();
-    if (checkpoint.id === "pinn-teacher") {
+    if (isTeacherUnlocked()) {
       scheduleTeacherPreview();
     }
     renderPinnViews();
@@ -71,6 +93,18 @@ export function createPinnCell({ ui, runtimeState, shell }) {
     _destroyBottomTabs();
   }
 
+  function reset() {
+    state.latestPreview = null;
+    state.latestMetrics = null;
+    state.femBaseline = null;
+    state.teacherPoints = null;
+    state.teacherLocked = true;
+    state.taskState = createInitialTaskState();
+    if (runtimeState.taskProgress) {
+      delete runtimeState.taskProgress[PINN_SESSION_CHECKPOINT_ID];
+    }
+  }
+
   function _destroyBottomTabs() {
     const tabBar = document.getElementById("pinn-tab-loss-plot");
     if (!tabBar) return; // tabs were never injected
@@ -90,9 +124,65 @@ export function createPinnCell({ ui, runtimeState, shell }) {
 
   function renderControls(checkpoint) {
     const v = getMergedPinnControls();
-    ui.controlsForm.innerHTML = `
+    const teacherSection = isTeacherUnlocked()
+      ? `
       <details class="toggle-panel" open>
-        <summary>Geometry and Load</summary>
+        <summary>Teacher Supervision</summary>
+        <div class="mt-4 space-y-3">
+          <p class="text-xs text-slate-400">
+            A one-shot high-resolution FEM solve supplies displacement labels at a sparse set of teacher points.
+            The training loss becomes <code>L = w<sub>PDE</sub>·L<sub>PDE</sub> + w<sub>BC</sub>·L<sub>BC</sub> + w<sub>teacher</sub>·L<sub>teacher</sub></code>,
+            where <code>L<sub>teacher</sub></code> is the mean squared displacement error against the FEM reference.
+          </p>
+          <div class="control-section-grid lg:grid-cols-2">
+            <div class="control-card">
+              <div class="range-row">
+                <label for="pinn-teacher-interior">Interior Teacher Points</label>
+                <span id="pinn-teacher-interior-value" class="range-value"></span>
+              </div>
+              <input id="pinn-teacher-interior" type="range" min="0" max="1000" step="10" value="${v.teacherInterior}" class="field-range" />
+              <p class="field-help">Random points inside the solid domain, uniformly distributed.</p>
+            </div>
+            <div class="control-card">
+              <div class="range-row">
+                <label for="pinn-teacher-boundary">Boundary Teacher Points</label>
+                <span id="pinn-teacher-boundary-value" class="range-value"></span>
+              </div>
+              <input id="pinn-teacher-boundary" type="range" min="0" max="500" step="5" value="${v.teacherBoundary}" class="field-range" />
+              <p class="field-help">Points on the frame outline and hole edge, excluding the load patch.</p>
+            </div>
+            <div class="control-card">
+              <div class="range-row">
+                <label for="pinn-teacher-load-patch">Load Patch Teacher Points</label>
+                <span id="pinn-teacher-load-patch-value" class="range-value"></span>
+              </div>
+              <input id="pinn-teacher-load-patch" type="range" min="0" max="200" step="2" value="${v.teacherLoadPatch}" class="field-range" />
+              <p class="field-help">Dense supervision exactly where the traction acts. Most useful for stress accuracy.</p>
+            </div>
+            <div class="control-card">
+              <div class="range-row">
+                <label for="pinn-teacher-weight">Teacher Weight</label>
+                <span id="pinn-teacher-weight-value" class="range-value"></span>
+              </div>
+              <input id="pinn-teacher-weight" type="range" min="0.1" max="100" step="0.1" value="${v.teacherWeight}" class="field-range" />
+              <p class="field-help">How strongly FEM displacement targets override the pure PDE+BC balance.</p>
+            </div>
+          </div>
+        </div>
+      </details>
+      `
+      : `
+      <details class="toggle-panel">
+        <summary>Teacher Supervision (Locked)</summary>
+        <div class="mt-4 checkpoint-placeholder text-sm text-slate-300">
+          Teacher supervision will stay locked in this merged workspace for now. Use this session to preview collocation, run baseline PINN training, and compare back to FEM first.
+        </div>
+      </details>
+      `;
+
+    ui.controlsForm.innerHTML = `
+      <details class="toggle-panel">
+        <summary>Geometry</summary>
         <div class="control-section-grid mt-4 lg:grid-cols-2">
           <div class="control-card">
             <label for="pinn-geometry" class="field-label">Geometry</label>
@@ -119,6 +209,12 @@ export function createPinnCell({ ui, runtimeState, shell }) {
             <input id="pinn-brace-half-width" type="range" min="0.006" max="0.05" step="0.002" value="${v.braceHalfWidth}" class="field-range" />
             <p class="field-help">Brace width only matters for the reinforced geometries.</p>
           </div>
+        </div>
+      </details>
+
+      <details class="toggle-panel">
+        <summary>Top Load Patch</summary>
+        <div class="control-section-grid mt-4 lg:grid-cols-2">
           <div class="control-card">
             <div class="range-row">
               <label for="pinn-patch-center">Patch Center (x)</label>
@@ -154,7 +250,7 @@ export function createPinnCell({ ui, runtimeState, shell }) {
         </div>
       </details>
 
-      <details class="toggle-panel" open>
+      <details class="toggle-panel">
         <summary>Sampling</summary>
         <div class="control-section-grid mt-4 lg:grid-cols-2">
           <div class="control-card">
@@ -192,7 +288,7 @@ export function createPinnCell({ ui, runtimeState, shell }) {
         </div>
       </details>
 
-      <details class="toggle-panel" ${checkpoint.id === "pinn-train" ? "open" : ""}>
+      <details class="toggle-panel">
         <summary>PINN and Training</summary>
         <div class="control-section-grid mt-4 lg:grid-cols-2">
           <div class="control-card">
@@ -244,7 +340,7 @@ export function createPinnCell({ ui, runtimeState, shell }) {
         </div>
       </details>
 
-      <details class="toggle-panel" ${checkpoint.id === "pinn-train" ? "open" : ""}>
+      <details class="toggle-panel">
         <summary>Loss Weighting and Run Control</summary>
         <div class="mt-4 space-y-4">
           <div class="control-section-grid lg:grid-cols-2">
@@ -265,77 +361,18 @@ export function createPinnCell({ ui, runtimeState, shell }) {
               <p class="field-help">Higher values emphasize support and loading conditions.</p>
             </div>
           </div>
-          ${
-            checkpoint.id === "pinn-train" || checkpoint.id === "pinn-teacher"
-              ? `
-                <div class="grid gap-3 lg:grid-cols-2">
-                  <button id="pinn-start-button" type="button" class="rounded-xl bg-cyan-500 px-4 py-3 font-semibold text-slate-950 transition hover:bg-cyan-400">
-                    Start Training
-                  </button>
-                  <button id="pinn-stop-button" type="button" class="rounded-xl border border-rose-500/70 bg-rose-500/10 px-4 py-3 font-semibold text-rose-200 transition hover:bg-rose-500/20" disabled>
-                    Stop
-                  </button>
-                </div>
-              `
-              : `
-                <div class="checkpoint-placeholder text-sm text-slate-300">
-                  Training controls activate in the next PINN checkpoint. Use this preview stage to inspect collocation choices first.
-                </div>
-              `
-          }
-        </div>
-      </details>
-
-      ${
-        checkpoint.id === "pinn-teacher"
-          ? `
-      <details class="toggle-panel" open>
-        <summary>Teacher Supervision</summary>
-        <div class="mt-4 space-y-3">
-          <p class="text-xs text-slate-400">
-            A one-shot high-resolution FEM solve supplies displacement labels at a sparse set of teacher points.
-            The training loss becomes <code>L = w<sub>PDE</sub>·L<sub>PDE</sub> + w<sub>BC</sub>·L<sub>BC</sub> + w<sub>teacher</sub>·L<sub>teacher</sub></code>,
-            where <code>L<sub>teacher</sub></code> is the mean squared displacement error against the FEM reference.
-          </p>
-          <div class="control-section-grid lg:grid-cols-2">
-            <div class="control-card">
-              <div class="range-row">
-                <label for="pinn-teacher-interior">Interior Teacher Points</label>
-                <span id="pinn-teacher-interior-value" class="range-value"></span>
-              </div>
-              <input id="pinn-teacher-interior" type="range" min="0" max="1000" step="10" value="${v.teacherInterior}" class="field-range" />
-              <p class="field-help">Random points inside the solid domain, uniformly distributed.</p>
-            </div>
-            <div class="control-card">
-              <div class="range-row">
-                <label for="pinn-teacher-boundary">Boundary Teacher Points</label>
-                <span id="pinn-teacher-boundary-value" class="range-value"></span>
-              </div>
-              <input id="pinn-teacher-boundary" type="range" min="0" max="500" step="5" value="${v.teacherBoundary}" class="field-range" />
-              <p class="field-help">Points on the frame outline and hole edge, excluding the load patch.</p>
-            </div>
-            <div class="control-card">
-              <div class="range-row">
-                <label for="pinn-teacher-load-patch">Load Patch Teacher Points</label>
-                <span id="pinn-teacher-load-patch-value" class="range-value"></span>
-              </div>
-              <input id="pinn-teacher-load-patch" type="range" min="0" max="200" step="2" value="${v.teacherLoadPatch}" class="field-range" />
-              <p class="field-help">Dense supervision exactly where the traction acts. Most useful for stress accuracy.</p>
-            </div>
-            <div class="control-card">
-              <div class="range-row">
-                <label for="pinn-teacher-weight">Teacher Weight</label>
-                <span id="pinn-teacher-weight-value" class="range-value"></span>
-              </div>
-              <input id="pinn-teacher-weight" type="range" min="0.1" max="100" step="0.1" value="${v.teacherWeight}" class="field-range" />
-              <p class="field-help">How strongly FEM displacement targets override the pure PDE+BC balance.</p>
-            </div>
+          <div class="grid gap-3 lg:grid-cols-2">
+            <button id="pinn-start-button" type="button" class="rounded-xl bg-cyan-500 px-4 py-3 font-semibold text-slate-950 transition hover:bg-cyan-400">
+              Start Training
+            </button>
+            <button id="pinn-stop-button" type="button" class="rounded-xl border border-rose-500/70 bg-rose-500/10 px-4 py-3 font-semibold text-rose-200 transition hover:bg-rose-500/20" disabled>
+              Stop
+            </button>
           </div>
         </div>
       </details>
-      `
-          : ""
-      }
+
+      ${teacherSection}
     `;
 
     state.controls = {
@@ -485,23 +522,19 @@ export function createPinnCell({ ui, runtimeState, shell }) {
       tone: "preview",
       detail: "Collocation points update automatically while you tune the shared structural case or the PINN sampling controls.",
     });
-    shell.setControlsSummary(
-      state.currentCheckpointId === "pinn-train"
-        ? "Tune geometry or loss weighting here, then launch a training run when the collocation looks reasonable."
-        : "Use this preview step to understand the collocation cloud before training.",
-    );
+    shell.setControlsSummary("Use this workspace to preview the collocation cloud, run training, and compare the learned field back to FEM.");
     if (state.previewTimer) {
       window.clearTimeout(state.previewTimer);
     }
     state.previewTimer = window.setTimeout(fetchPreview, 120);
-    if (state.currentCheckpointId === "pinn-teacher") {
+    if (isTeacherUnlocked()) {
       scheduleTeacherPreview();
     }
     updateGuide();
   }
 
   function scheduleTeacherPreview() {
-    if (state.currentCheckpointId !== "pinn-teacher") {
+    if (!isTeacherUnlocked()) {
       return;
     }
     if (state.teacherPreviewTimer) {
@@ -512,7 +545,7 @@ export function createPinnCell({ ui, runtimeState, shell }) {
 
   async function fetchTeacherPreviewNow() {
     state.teacherPreviewTimer = null;
-    if (state.currentCheckpointId !== "pinn-teacher") {
+    if (!isTeacherUnlocked()) {
       return;
     }
     if (state.isTraining) {
@@ -521,7 +554,7 @@ export function createPinnCell({ ui, runtimeState, shell }) {
     }
     try {
       const payload = await fetchTeacherPreview(getConfig());
-      if (state.currentCheckpointId !== "pinn-teacher") {
+      if (!isTeacherUnlocked()) {
         return;
       }
       state.teacherPoints = payload?.points ?? null;
@@ -536,13 +569,15 @@ export function createPinnCell({ ui, runtimeState, shell }) {
       const payload = await fetchPinnPreview(getConfig());
       state.isPreviewing = false;
       state.latestPreview = payload;
+      state.taskState.previewReady = true;
       runtimeState.pinn.latestPreview = payload;
-      runtimeState.checkpointEvents["pinn-preview"] = {
+      updateTaskProgress({ refresh: false });
+      runtimeState.checkpointEvents[`${PINN_SESSION_CHECKPOINT_ID}:preview`] = {
         status: "success",
         points: payload.counts.n_domain,
         caseId: payload.case_id,
       };
-      if (!["pinn-preview", "pinn-train", "pinn-teacher"].includes(state.currentCheckpointId)) {
+      if (state.currentCheckpointId !== PINN_SESSION_CHECKPOINT_ID) {
         return;
       }
       renderPinnViews();
@@ -570,18 +605,16 @@ export function createPinnCell({ ui, runtimeState, shell }) {
   }
 
   function renderPinnViews() {
-    const isTrainOrTeacher =
-      state.currentCheckpointId === "pinn-train" ||
-      state.currentCheckpointId === "pinn-teacher";
+    const isTrainOrTeacher = state.currentCheckpointId === PINN_SESSION_CHECKPOINT_ID;
     if (state.latestPreview) {
       const payloadForPlot =
-        state.teacherPoints && state.currentCheckpointId === "pinn-teacher"
+        state.teacherPoints && isTeacherUnlocked()
           ? { ...state.latestPreview, teacher_points: state.teacherPoints }
           : state.latestPreview;
       renderPointCloudPlot(ui.leftPlot, payloadForPlot);
       const activeTab = state.activeBottomTab;
       const teacherSummary =
-        state.currentCheckpointId === "pinn-teacher" && state.teacherPoints
+        isTeacherUnlocked() && state.teacherPoints
           ? ` · teacher ${(state.teacherPoints.interior?.x?.length ?? 0)
               + (state.teacherPoints.boundary?.x?.length ?? 0)
               + (state.teacherPoints.load_patch?.x?.length ?? 0)}`
@@ -666,6 +699,10 @@ export function createPinnCell({ ui, runtimeState, shell }) {
     });
     document.getElementById("pinn-tab-btn-compare-fem").addEventListener("click", () => {
       state.activeBottomTab = "compare-fem";
+      if (state.femBaseline) {
+        state.taskState.comparisonViewed = true;
+        updateTaskProgress();
+      }
       _renderBottomTabs();
     });
   }
@@ -824,8 +861,10 @@ export function createPinnCell({ ui, runtimeState, shell }) {
           teacher: [...(state.losses.teacher ?? []), teacherValue],
         };
         state.latestMetrics = message;
+        state.taskState.trainingObserved = true;
         runtimeState.pinn.latestMetrics = message;
-        runtimeState.checkpointEvents[state.currentCheckpointId ?? "pinn-train"] = {
+        updateTaskProgress({ refresh: false });
+        runtimeState.checkpointEvents[state.currentCheckpointId ?? PINN_SESSION_CHECKPOINT_ID] = {
           status: "running",
           epoch: message.epoch,
           totalLoss: message.total_loss,
@@ -840,7 +879,7 @@ export function createPinnCell({ ui, runtimeState, shell }) {
       }
       if (message.type === "complete") {
         setTrainingState(false);
-        runtimeState.checkpointEvents[state.currentCheckpointId ?? "pinn-train"] = {
+        runtimeState.checkpointEvents[state.currentCheckpointId ?? PINN_SESSION_CHECKPOINT_ID] = {
           status: "success",
           epoch: message.epoch,
           bestTotalLoss: message.best_total_loss,
@@ -858,7 +897,7 @@ export function createPinnCell({ ui, runtimeState, shell }) {
       }
       if (message.type === "error") {
         setTrainingState(false);
-        runtimeState.checkpointEvents[state.currentCheckpointId ?? "pinn-train"] = {
+        runtimeState.checkpointEvents[state.currentCheckpointId ?? PINN_SESSION_CHECKPOINT_ID] = {
           status: "error",
           message: message.message,
         };
@@ -944,9 +983,48 @@ export function createPinnCell({ ui, runtimeState, shell }) {
     }));
   }
 
+  function updateTaskProgress({ refresh = true } = {}) {
+    if (!runtimeState.taskProgress) {
+      runtimeState.taskProgress = {};
+    }
+
+    const taskChecks = [
+      { id: "preview-collocation", complete: state.taskState.previewReady },
+      { id: "run-pinn-training", complete: state.taskState.trainingObserved },
+      { id: "compare-with-numerical", complete: state.taskState.comparisonViewed },
+    ];
+    const activeIndex = taskChecks.findIndex((task) => !task.complete);
+    const allComplete = activeIndex === -1;
+    const tasks = Object.fromEntries(
+      taskChecks.map((task, index) => [
+        task.id,
+        {
+          completed: allComplete || index < activeIndex,
+          status: allComplete || index < activeIndex
+            ? "completed"
+            : index === activeIndex
+              ? "active"
+              : "locked",
+        },
+      ]),
+    );
+
+    runtimeState.taskProgress[PINN_SESSION_CHECKPOINT_ID] = {
+      allComplete,
+      activeTaskId: allComplete ? null : taskChecks[activeIndex].id,
+      tasks,
+      updatedAt: new Date().toISOString(),
+    };
+
+    if (refresh) {
+      shell.refreshProgress();
+    }
+  }
+
   return {
     enter,
     leave,
+    reset,
   };
 }
 

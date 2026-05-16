@@ -1,4 +1,4 @@
-const STORAGE_KEY = "pinn-playground-checkpoint-shell-v2";
+const STORAGE_KEY = "pinn-playground-checkpoint-shell-v3";
 
 export const checkpointGroups = [
   {
@@ -47,7 +47,7 @@ export const checkpointGroups = [
   {
     id: "pinn",
     title: "PINN Cell",
-    description: "Reuse the same geometry to preview collocation, train the PINN, and compare back to FEM.",
+    description: "Read the tutorial first, then preview, train, and compare the PINN in one workspace.",
     checkpoints: [
       {
         id: "pinn-tutorial",
@@ -65,49 +65,36 @@ export const checkpointGroups = [
         completeMode: "manual",
       },
       {
-        id: "pinn-preview",
+        id: "pinn-session",
         cellId: "pinn",
-        title: "Preview Collocation Points",
-        subtitle: "Explore geometry, sampling, and point density before training.",
-        controlsTitle: "PINN Preview Controls",
-        controlsSubtitle: "Configure geometry and collocation first. Training controls appear in the next step.",
-        tasks: [],
-        requirements: [
-          "Adjust geometry and sampling.",
-          "Inspect the collocation cloud.",
-          "Continue when you are ready to train.",
+        title: "PINN Workspace",
+        subtitle: "Preview collocation points, run training, and compare the learned field against the numerical baseline.",
+        controlsTitle: "PINN Workspace",
+        controlsSubtitle: "Use one workspace for preview, training, and comparison. Teacher supervision stays locked for now.",
+        tasks: [
+          {
+            id: "preview-collocation",
+            title: "Preview collocation points",
+            question: "How does the collocation cloud change when you adjust geometry or sampling?",
+          },
+          {
+            id: "run-pinn-training",
+            title: "Run the PINN",
+            question: "What happens to the loss curves and stress map during the first part of training?",
+          },
+          {
+            id: "compare-with-numerical",
+            title: "Compare with the numerical baseline",
+            question: "Does the learned stress pattern remain consistent with the FEM reference?",
+          },
         ],
-        completeMode: "manual",
-      },
-      {
-        id: "pinn-train",
-        cellId: "pinn",
-        title: "Train PINN",
-        subtitle: "Run training and inspect the live loss and stress plots.",
-        controlsTitle: "PINN Training Controls",
-        controlsSubtitle: "Use the existing live training workflow inside this checkpoint.",
-        tasks: [],
+        teacherLocked: true,
         requirements: [
-          "Start or stop training as needed.",
-          "Watch the stress map and loss curves update in place.",
-          "Continue after you have seen one run.",
+          "Preview the collocation cloud before training.",
+          "Run one PINN training session.",
+          "Compare the learned field against the FEM baseline before continuing.",
         ],
-        completeMode: "manual",
-      },
-      {
-        id: "pinn-teacher",
-        cellId: "pinn",
-        title: "Teacher-Guided PINN",
-        subtitle: "Train with sparse FEM displacement labels to lift the stress magnitude ceiling.",
-        controlsTitle: "Teacher-Guided Training",
-        controlsSubtitle: "Pick how many FEM displacement samples are injected per region, then retrain from scratch.",
-        tasks: [],
-        requirements: [
-          "Choose how many teacher points land in the interior, on the free boundary, and on the load patch.",
-          "Start a guided training run and watch the teacher loss trace.",
-          "Compare against the plain PINN result from the previous checkpoint.",
-        ],
-        completeMode: "manual",
+        completeMode: "task_list",
       },
     ],
   },

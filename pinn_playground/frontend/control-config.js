@@ -43,8 +43,36 @@ export const DEFAULT_DIAGNOSTIC_RUN_OPTIONS = Object.freeze({
   stress_grid_n: 40,
 });
 
+const SHARED_STRUCTURAL_KEYS = [
+  "geometry",
+  "frameThickness",
+  "braceHalfWidth",
+  "patchCenter",
+  "patchWidth",
+];
+
 export function mergeControlValues(defaultValues, savedValues = null) {
   return { ...defaultValues, ...(savedValues ?? {}) };
+}
+
+export function mergeSharedStructuralValues(baseValues, sharedValues = null) {
+  if (!sharedValues) {
+    return { ...baseValues };
+  }
+
+  const merged = { ...baseValues };
+  SHARED_STRUCTURAL_KEYS.forEach((key) => {
+    if (sharedValues[key] !== undefined) {
+      merged[key] = sharedValues[key];
+    }
+  });
+  return merged;
+}
+
+export function pickSharedStructuralValues(values) {
+  return Object.fromEntries(
+    SHARED_STRUCTURAL_KEYS.map((key) => [key, values[key]]),
+  );
 }
 
 export function readFemControlValues(controls, fallback = DEFAULT_FEM_CONTROLS) {
