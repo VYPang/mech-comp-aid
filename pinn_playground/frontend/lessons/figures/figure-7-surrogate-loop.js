@@ -7,7 +7,7 @@ import {
   makeFrameScheduler,
   makeMapper,
   setupCanvas,
-} from "../figure-base.js?v=checkpoint-shell-14";
+} from "../figure-base.js?v=checkpoint-shell-15";
 
 function femGroundTruth(d) {
   // Toy: peak stress vs brace position.

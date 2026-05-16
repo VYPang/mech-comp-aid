@@ -1,7 +1,7 @@
-import { fetchFemPreview, fetchFemSolve } from "./api.js?v=checkpoint-shell-14";
-import { buildFemConfig, DEFAULT_FEM_CONTROLS, mergeControlValues, mergeSharedStructuralValues, pickSharedStructuralValues, readFemControlValues } from "./control-config.js?v=checkpoint-shell-14";
-import { buildNumericalGuideSections } from "./guide-content.js?v=checkpoint-shell-14";
-import { renderFemBoundaryPlot, renderFemDeformedPlot, renderFemMeshPlot, renderNotePlot, renderStressHeatmap } from "./plots.js?v=checkpoint-shell-14";
+import { fetchFemPreview, fetchFemSolve } from "./api.js?v=checkpoint-shell-15";
+import { buildFemConfig, DEFAULT_FEM_CONTROLS, mergeControlValues, mergeSharedStructuralValues, pickSharedStructuralValues, readFemControlValues } from "./control-config.js?v=checkpoint-shell-15";
+import { buildNumericalGuideSections } from "./guide-content.js?v=checkpoint-shell-15";
+import { renderFemBoundaryPlot, renderFemDeformedPlot, renderFemMeshPlot, renderNotePlot, renderStressHeatmap } from "./plots.js?v=checkpoint-shell-15";
 
 const NUMERICAL_CHECKPOINT_ID = "numerical-session";
 const TARGET_MESH_CELLS = 80;

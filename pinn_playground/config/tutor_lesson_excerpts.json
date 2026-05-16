@@ -1,0 +1,75 @@
+{
+  "version": 1,
+  "excerpts": [
+    {
+      "id": "fem-mesh-density",
+      "title": "Mesh density and field resolution",
+      "cellIds": ["numerical"],
+      "checkpointIds": ["numerical-session"],
+      "keywords": ["mesh", "cells", "resolution", "stress", "fem"],
+      "summary": "A finer FEM mesh resolves sharper gradients near supports, corners, braces, and load patches. A coarse mesh can smooth out stress concentrations even when the boundary conditions are correct.",
+      "watch": "Compare where deformation is largest against where von Mises stress peaks. If the stress hot spot moves or sharpens after refinement, the previous mesh was under-resolving the field.",
+      "try": "Increase structured cells per side and rerun the solve before using the FEM field as the PINN comparison baseline."
+    },
+    {
+      "id": "collocation-points",
+      "title": "Collocation points",
+      "cellIds": ["pinn"],
+      "checkpointIds": ["pinn-session"],
+      "keywords": ["collocation", "domain", "boundary", "points", "sampling"],
+      "summary": "PINNs do not see a mesh in the FEM sense. They enforce the PDE at sampled interior collocation points and enforce supports or loading at boundary points.",
+      "watch": "Sparse interior points can leave the displacement field patchy. Sparse boundary points can make supports and traction loading unreliable.",
+      "try": "Adjust both domain and boundary point counts before the first baseline run so the student sees how each point family affects the learning problem."
+    },
+    {
+      "id": "pde-vs-bc-loss",
+      "title": "PDE loss versus boundary loss",
+      "cellIds": ["pinn"],
+      "checkpointIds": ["pinn-session"],
+      "keywords": ["pde", "bc", "boundary", "loss", "weight"],
+      "summary": "PDE loss measures interior equilibrium, while boundary-condition loss measures whether supports and traction are enforced. Either term can dominate training and hide the other failure mode.",
+      "watch": "If boundary loss is much larger than PDE loss, the model is usually struggling with supports or loading. If PDE loss dominates, equilibrium inside the domain is the bottleneck.",
+      "try": "Change only one loss weight at a time, rerun, and compare whether the stress field or boundary behavior improves."
+    },
+    {
+      "id": "neumann-loading",
+      "title": "Why Neumann loading is hard",
+      "cellIds": ["pinn"],
+      "checkpointIds": ["pinn-session"],
+      "keywords": ["neumann", "load", "traction", "patch", "stress"],
+      "summary": "A traction boundary condition constrains derivatives of the displacement field, not displacement values directly. That makes localized load patches harder for a PINN than fixed displacement constraints.",
+      "watch": "The most visible mismatch often appears near the top load patch, where peak stress is localized and derivative-sensitive.",
+      "try": "Use the FEM comparison tab to identify whether the largest error aligns with the load patch before changing teacher-point settings."
+    },
+    {
+      "id": "teacher-guidance",
+      "title": "Teacher-guided supervision",
+      "cellIds": ["pinn"],
+      "checkpointIds": ["pinn-session"],
+      "keywords": ["teacher", "supervision", "interior", "load", "patch"],
+      "summary": "Teacher points add sparse FEM displacement targets on top of the physics losses. They are most useful when placed near the failure mode the physics loss alone struggles to correct.",
+      "watch": "Interior teacher points can improve smooth displacement trends but may not fix localized stress peaks. Load-patch teacher points often help more because they anchor the region where traction enters the domain.",
+      "try": "Compare an interior-only teacher run against a load-patch-only teacher run using the same baseline settings."
+    },
+    {
+      "id": "adaptive-and-fourier",
+      "title": "Adaptive sampling and Fourier features",
+      "cellIds": ["pinn"],
+      "checkpointIds": ["pinn-session"],
+      "keywords": ["adaptive", "fourier", "sigma", "sampling", "smooth", "spectral"],
+      "summary": "Residual-adaptive sampling moves attention toward high-error regions, while Fourier features help the network represent sharper spatial variation. Both can help when stress is too smooth near localized features.",
+      "watch": "Adaptive sampling should concentrate points around difficult regions. Fourier sigma that is too high can make training noisy; too low may still look overly smooth.",
+      "try": "Try adaptive sampling first for residual localization, then enable Fourier features with a modest sigma when the stress field remains too smooth."
+    },
+    {
+      "id": "normalization-and-capacity",
+      "title": "Normalization and network capacity",
+      "cellIds": ["pinn"],
+      "checkpointIds": ["pinn-session"],
+      "keywords": ["normalization", "capacity", "hidden", "layers", "optimization"],
+      "summary": "Input normalization stabilizes optimization by keeping coordinates on a friendly numerical scale. Network width and depth control representational capacity, but more capacity is not automatically better if losses are poorly balanced.",
+      "watch": "If losses are noisy or fail to decrease, normalization and learning stability matter before adding layers. If the field is consistently too smooth after stable training, capacity may be too low.",
+      "try": "Keep normalization on for the teaching workflow and change architecture only after the baseline loss behavior is understandable."
+    }
+  ]
+}

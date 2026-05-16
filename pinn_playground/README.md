@@ -1,104 +1,70 @@
-# PINN Playground Handoff
+# PINN Playground
 
-This document summarizes what has been built so far in `pinn_playground/` and what the next agent should know before continuing development.
+`PINN Playground` is an interactive educational web application for exploring Physics-Informed Neural Networks on a small 2D linear-elasticity metal-frame problem. The app combines a numerical baseline, a tutorial sequence, a PINN training workspace, and a local AI tutor so students can move from mechanics intuition to PINN behavior inside one interface.
 
-## Project Goal
+## Quick Start
 
-`PINN Playground` is an interactive educational web app for Mechanical Engineering students to explore Physics-Informed Neural Networks (PINNs) on a lightweight 2D linear elasticity problem.
+This project now assumes a local Qwen model for the tutor. The shortest working setup is:
 
-The intended student experience is:
+1. install `uv` and Python 3.11+,
+2. install Ollama,
+3. sync the Python environment,
+4. pull `qwen3.6:27b`,
+5. start the backend server,
+6. open the browser UI.
 
-- change geometry and PINN settings from the browser
-- compare a base frame, a diagonal brace, and an X-brace
-- preview collocation points before training
-- stream live losses and Von Mises stress during training
-- receive guide-box hints when choices are likely to help or hurt training
+### 1. Install system prerequisites
 
-## Current Status
+Required:
 
-The project is no longer just a scaffold. It now includes:
 
-- a working FastAPI backend
-- a `typer` + `rich` CLI runner
-- a browser dashboard served from FastAPI static files
-- live preview of collocation points
-- WebSocket-based training sessions
-- Plotly visualizations for:
-  - collocation points
-  - Von Mises stress
-  - training curves
-- a rule-based "Professor Assistant" hint panel
+If `uv` is not installed yet:
 
-Recent UI changes:
-
-- `Collocation Points` and `Von Mises Stress` are side-by-side
-- `Training Curves` is below them
-- parameter controls are grouped into collapsible toggle sections
-
-Recent bug fixes:
-
-- added `websockets` dependency so Uvicorn can serve `/ws/train`
-- fixed the loss curve update bug by avoiding in-place mutation of Plotly data arrays in `frontend/app.js`
-
-## File Architecture
-
-```text
-pinn_playground/
-  AGENT.md                    # this handoff file
-  __init__.py
-  backend/
-    __init__.py
-    cli.py                    # Typer + Rich CLI to launch server
-    main.py                   # FastAPI app, preview endpoint, websocket endpoint, static mount
-    training.py               # training config, preview payloads, training loop, BC loss
-    pinn_model.py             # PINN MLP and Von Mises grid helper
-    physics_env.py            # geometry, sampling, boundary points, PDE residual helpers
-  frontend/
-    index.html                # dashboard layout
-    app.js                    # controls, fetch preview, websocket client, Plotly updates, hints
-    style.css                 # small custom styles for dashboard/toggles
+```bash
+curl -LsSf https://astral.sh/uv/install.sh | sh
 ```
 
-## Coding Framework / Stack
+If Ollama is not installed yet, follow the platform-specific instructions from the Ollama project, then confirm it is available:
 
-### Backend
+```bash
+ollama --version
+```
 
-- Python 3.11+
-- FastAPI
-- Uvicorn
-- PyTorch
-- Typer
-- Rich
-- NumPy
+### 2. Install Python dependencies
 
-### Frontend
-
-- vanilla JavaScript
-- HTML
-- TailwindCSS via CDN
-- Plotly.js via CDN
-
-### Dependency Notes
-
-The root `pyproject.toml` currently includes:
-
-- `fastapi`
-- `uvicorn`
-- `torch`
-- `typer`
-- `rich`
-- `websockets`
-
-`websockets` is required for Uvicorn to accept browser WebSocket upgrades.
-
-## Runtime Flow
-
-### Server startup
-
-Run from repo root:
+From the repository root, create the environment and install the project dependencies:
 
 ```bash
 uv sync
+```
+
+This installs the dependencies declared in the root `pyproject.toml`, including:
+
+
+`websockets` is required so Uvicorn can accept the browser training socket at `/ws/train`.
+
+### 3. Download the local Qwen model for the tutor
+
+Pull the model used by the tutor harness:
+
+```bash
+ollama pull qwen3.6:27b
+```
+
+The tutor is currently configured to work with OpenAI-compatible local endpoints and will auto-detect supported Qwen models from Ollama. The model validated during development was:
+
+
+If Ollama is not already running as a background service on your machine, start it in another terminal:
+
+```bash
+ollama serve
+```
+
+### 4. Start the PINN Playground server
+
+From the repository root:
+
+```bash
 uv run python pinn_playground/backend/cli.py serve --port 8000
 ```
 
@@ -108,240 +74,81 @@ Then open:
 http://127.0.0.1:8000/
 ```
 
-### Browser data flow
+### 5. Optional health checks
 
-1. `frontend/index.html` loads the dashboard shell.
-2. `frontend/app.js` initializes Plotly charts.
-3. UI control changes trigger `POST /api/preview-points`.
-4. Clicking `Start Training` opens `ws://.../ws/train`.
-5. The browser sends:
+You can verify the backend and tutor model status with:
 
-```json
-{ "type": "start", "payload": { ...config... } }
+```bash
+curl http://127.0.0.1:8000/health
+curl http://127.0.0.1:8000/api/tutor/status
 ```
 
-6. The backend streams messages such as:
+If the tutor is ready, the status response should report the selected local model and `ready: true`.
 
-- `session`
-- `preview`
-- `metrics`
-- `complete`
-- `error`
+## Problem Statement
 
-7. `frontend/app.js` updates:
+The teaching problem is a simplified 2D plane-stress metal frame. The goal is not to produce a production-grade structural solver. The goal is to provide a compact mechanics problem on which students can compare a classical numerical baseline against a PINN approximation.
 
-- collocation scatter
-- stress heatmap
-- training curves
-- guide box text
+### Geometry
 
-## Backend Details
+The domain is a square outer frame with a centered square hole. The student can switch between three reinforcement layouts:
 
-### `backend/physics_env.py`
+- `base`: no brace across the opening,
+- `diagonal`: one diagonal brace,
+- `x_brace`: two crossing braces.
 
-Current responsibilities:
+This gives three related structural cases with visibly different load paths and stress concentrations.
 
-- defines the normalized domain
-  - outer square `[0,1] x [0,1]`
-  - centered square hole
-- supports three geometries:
-  - `base`
-  - `diagonal`
-  - `x_brace`
-- generates domain points:
-  - `uniform`
-  - `adaptive`
-- generates boundary points with normals
-- computes:
-  - strains via autograd
-  - plane-stress constitutive terms
-  - equilibrium residuals
-  - Von Mises stress
-  - PDE loss
+### Material model
 
-### Adaptive sampling
+The current mechanics model is small-strain linear elasticity in plane stress. The PINN predicts the displacement field:
 
-Adaptive sampling is currently heuristic, not residual-based:
+$$
+(x, y) \mapsto (u(x, y), v(x, y))
+$$
 
-- generate a large candidate pool inside the domain
-- compute distance to hotspot locations
-- assign weight `1 / (d + floor)^power`
-- sample without replacement using the weights
+From that field, the application computes strain, stress, equilibrium residuals, and Von Mises stress for visualization and comparison.
 
-Hotspots are mainly:
+### Loading and boundary conditions
 
-- the four inner-hole corners
-- brace region emphasis for reinforced geometries
+The boundary conditions are deliberately aligned between the FEM baseline and the PINN teaching case.
 
-### `backend/pinn_model.py`
+- The bottom outer edge is fully clamped, so both displacement components are fixed:
 
-Current PINN:
+$$
+u = 0, \quad v = 0
+$$
 
-- MLP
-- input: `(x, y)`
-- output: `(u, v)` displacement
-- `tanh` activations
-- optional input normalization to `[-1, 1]`
+- The load is applied on a patch of the top outer boundary. By default, that patch is centered at $x = 0.50$ and has width $0.20$, so the default loaded interval is:
 
-Also provides:
+$$
+x \in [0.40, 0.60], \quad y = 1.0
+$$
 
-- parameter count helper
-- `von_mises_grid()` for Plotly-ready heatmap data
+- The default traction vector is purely vertical and downward:
 
-### `backend/training.py`
+$$
+\sigma \cdot n = [t_x, t_y] = [0, -1]
+$$
 
-This is the core training/session module.
+- That means the default horizontal traction is zero and the default vertical traction has magnitude $1.0$ in the negative $y$-direction.
 
-Current responsibilities:
+- The remaining outer boundary, the hole boundary, and brace surfaces are traction-free.
 
-- defines `TrainingConfig` (Pydantic model)
-- builds preview payloads for the frontend
-- builds the PINN and optimizer
-- runs the training loop
-- computes total loss:
-  - PDE loss
-  - BC loss
-- streams periodic metrics and stress grid snapshots to the browser
+In the current teaching setup, this is best read as a normalized reference load case rather than a calibrated real-world engineering load. The patch location and width are user-controlled, but the default direction is vertically downward with unit magnitude.
 
-### Current boundary conditions
+## Runtime Overview
 
-This is important for future work:
+The application has three main interactive paths.
 
-- bottom outer edge is clamped:
-  - `u = 0`
-  - `v = 0`
-- a configurable patch on the top outer edge is given a traction load:
-  - `sigma . n = [traction_x, traction_y]`
-- the remaining outer boundary, inner-hole boundary, and brace surfaces are traction-free
+### 1. Numerical path
 
-This means the current PINN teaching case now follows the same support and traction setup as the FEM baseline.
+The student configures geometry, loading, and mesh density, previews the FEM setup, solves the numerical problem, and uses the result as a reference baseline.
 
-### Where loading is applied
+### 2. Tutorial path
 
-The current PINN setup uses an explicit traction patch on the **top outer boundary** with the same adjustable patch-center, patch-width, and material inputs exposed in the numerical cell.
+The student works through the PINN tutorial checkpoint before entering the full PINN workspace. This is intended to bridge numerical methods, machine learning, deep learning, and PINNs with interactive figures rather than static notes alone.
 
-### `backend/main.py`
+### 3. PINN path
 
-Current API surface:
-
-- `GET /health`
-- `POST /api/preview-points`
-- `WS /ws/train`
-
-Important implementation constraint:
-
-- API routes must be declared before the static mount on `/`
-
-### `backend/cli.py`
-
-Provides:
-
-- `serve`
-- `version`
-
-Uses:
-
-- `typer`
-- `rich`
-- `uvicorn.run("pinn_playground.backend.main:app", ...)`
-
-## Frontend Details
-
-### `frontend/index.html`
-
-Dashboard sections currently include:
-
-- header / server status
-- collapsible parameter groups
-- collocation plot
-- Von Mises stress plot
-- training curves
-- Professor Assistant panel
-
-### `frontend/app.js`
-
-Current responsibilities:
-
-- gathers UI config
-- updates slider labels
-- requests preview data from `/api/preview-points`
-- opens/closes WebSocket connections
-- sends `start` / `stop`
-- handles `session`, `preview`, `metrics`, `complete`, `error`
-- updates Plotly plots
-- generates guide-box text from simple rules
-
-Important bug fix already applied:
-
-- `appendLoss()` rebuilds arrays immutably before calling `Plotly.react()`
-- this avoids the issue where only the first point appeared on the loss curve
-
-### `frontend/style.css`
-
-Only small custom styling is used here:
-
-- input styles
-- plot panel height
-- collapsible toggle panel styles
-- guide-box emphasis
-
-## Known Behavior / Constraints
-
-- The app is currently single-session in spirit, though each WebSocket connection creates its own model run.
-- Training is intentionally lightweight and educational, not mechanically rigorous.
-- Stress updates are streamed every `update_every` epochs, default `50`.
-- Stress grid size is intentionally modest for browser responsiveness.
-- The guide box is rule-based and not yet tied to deeper training diagnostics.
-
-## What Has Been Done Across The Conversation
-
-1. Created the `pinn_playground/` package structure from scratch.
-2. Added backend dependencies for FastAPI, Uvicorn, Torch, and later `websockets`.
-3. Implemented the 2D frame geometry, brace variants, adaptive sampling, PDE residuals, and Von Mises computation.
-4. Implemented the PINN MLP with optional input normalization.
-5. Added a FastAPI app and Typer CLI.
-6. Added an initial static landing page so `/` would no longer 404.
-7. Replaced the landing page with the actual dashboard.
-8. Added `/api/preview-points`.
-9. Added `WS /ws/train`.
-10. Added the training session module with BC loss and streamed metrics.
-11. Fixed missing WebSocket transport by adding `websockets`.
-12. Fixed the Plotly training-curve bug caused by in-place array mutation.
-13. Updated the layout to:
-    - side-by-side collocation and stress plots
-    - training curve below
-    - toggle-based control sections
-14. Explained the current boundary conditions and loading model.
-
-## Recommended Next Steps
-
-These are the most logical continuation points for the next agent:
-
-- improve the mechanics model for teaching clarity
-  - optionally switch from prescribed displacement to explicit traction loading
-  - make the loading visualization clearer in the UI
-- improve the "Professor Assistant"
-  - include hints based on loss trends, not just static settings
-  - explicitly explain boundary conditions and reinforcement effects
-- improve comparison workflow
-  - save last run summary
-  - compare `base` vs `diagonal` vs `x_brace`
-- add more training diagnostics
-  - elapsed time
-  - parameter count
-  - device indicator
-  - peak stress summary
-- make the frontend more robust
-  - clearer training states
-  - better WebSocket error handling
-  - optional caching / reset behavior
-- consider reducing duplicated preview requests when controls are changed rapidly
-
-## Practical Notes For The Next Agent
-
-- Use `uv run python pinn_playground/backend/cli.py serve --port 8000` from repo root.
-- If the browser seems stale after JS/CSS changes, hard refresh.
-- If WebSockets fail again, confirm the server was restarted after dependency changes.
-- Keep route declarations above the static mount in `backend/main.py`.
-- If you touch Plotly update logic, be careful with in-place mutation of arrays.
-- The current implementation is intentionally simple and educational; do not assume it is a production mechanics solver.
+The student previews collocation points, launches PINN training, watches losses and stress maps evolve, compares the result against FEM, and then experiments with teacher-guided supervision.

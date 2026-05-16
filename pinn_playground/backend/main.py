@@ -19,6 +19,14 @@ from pinn_playground.backend.training import (
     build_teacher_preview_payload,
     stream_training_session,
 )
+from pinn_playground.backend.tutor import (
+    TutorClearRequest,
+    TutorChatRequest,
+    TutorChatResponse,
+    clear_tutor_session,
+    get_tutor_status,
+    run_tutor_chat,
+)
 
 # API routes must be registered before the catch-all static mount on "/".
 app = FastAPI(
@@ -81,6 +89,24 @@ def fem_solve(config: FEMProblemConfig) -> dict[str, object]:
 def webui_diagnostics(request: WebUIDiagnosticsRequest) -> dict[str, object]:
     """Evaluate a WebUI state snapshot and optionally run lightweight computations."""
     return evaluate_webui_state(request)
+
+
+@app.post("/api/tutor/chat", response_model=TutorChatResponse)
+def tutor_chat(request: TutorChatRequest) -> TutorChatResponse:
+    """Run one global-tutor turn through the harness."""
+    return run_tutor_chat(request)
+
+
+@app.get("/api/tutor/status")
+def tutor_status() -> dict[str, object]:
+    """Return local model runner status for the tutor."""
+    return get_tutor_status()
+
+
+@app.post("/api/tutor/clear")
+def tutor_clear(request: TutorClearRequest) -> dict[str, object]:
+    """Clear server-side state for the global tutor thread."""
+    return clear_tutor_session(request)
 
 
 @app.websocket("/ws/train")

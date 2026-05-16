@@ -2,6 +2,16 @@ function makeUrl(path) {
   return new URL(path, window.location.origin).toString();
 }
 
+async function getJson(path) {
+  const response = await fetch(makeUrl(path));
+
+  if (!response.ok) {
+    throw new Error(`Request failed (${response.status})`);
+  }
+
+  return response.json();
+}
+
 async function postJson(path, payload) {
   const response = await fetch(makeUrl(path), {
     method: "POST",
@@ -34,6 +44,18 @@ export function fetchTeacherPreview(config) {
 
 export function fetchWebuiDiagnostics(request) {
   return postJson("/api/diagnostics", request);
+}
+
+export function postTutorChat(request) {
+  return postJson("/api/tutor/chat", request);
+}
+
+export function clearTutorChat(request) {
+  return postJson("/api/tutor/clear", request);
+}
+
+export function fetchTutorStatus() {
+  return getJson("/api/tutor/status");
 }
 
 export function createPinnSocket() {

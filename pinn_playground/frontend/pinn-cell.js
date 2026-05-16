@@ -1,7 +1,7 @@
-import { createPinnSocket, fetchPinnPreview, fetchTeacherPreview } from "./api.js?v=checkpoint-shell-14";
-import { buildPinnConfig, DEFAULT_PINN_CONTROLS, mergeControlValues, mergeSharedStructuralValues, pickSharedStructuralValues, readPinnControlValues } from "./control-config.js?v=checkpoint-shell-14";
-import { buildPinnGuideSections } from "./guide-content.js?v=checkpoint-shell-14";
-import { renderLossPlot, renderNotePlot, renderPointCloudPlot, renderStressHeatmap, renderErrorHeatmap } from "./plots.js?v=checkpoint-shell-14";
+import { createPinnSocket, fetchPinnPreview, fetchTeacherPreview } from "./api.js?v=checkpoint-shell-15";
+import { buildPinnConfig, DEFAULT_PINN_CONTROLS, mergeControlValues, mergeSharedStructuralValues, pickSharedStructuralValues, readPinnControlValues } from "./control-config.js?v=checkpoint-shell-15";
+import { buildPinnGuideSections } from "./guide-content.js?v=checkpoint-shell-15";
+import { renderLossPlot, renderNotePlot, renderPointCloudPlot, renderStressHeatmap, renderErrorHeatmap } from "./plots.js?v=checkpoint-shell-15";
 
 const PINN_SESSION_CHECKPOINT_ID = "pinn-session";
 
@@ -101,13 +101,18 @@ export function createPinnCell({ ui, runtimeState, shell }) {
     const config = buildPinnConfig(values, { teacherEnabled: isTeacherUnlocked() });
     runtimeState.pinn.savedControls = values;
     runtimeState.pinn.currentConfig = config;
+    runtimeState.pinn.activeBottomTab = state.activeBottomTab;
     runtimeState.sharedStructuralControls = pickSharedStructuralValues(values);
     return config;
   }
 
   function enter(checkpoint) {
+    if (!runtimeState.pinn) {
+      runtimeState.pinn = {};
+    }
     state.currentCheckpointId = checkpoint.id;
     state.teacherLocked = Boolean(checkpoint.teacherLocked) && !Boolean(runtimeState.pinn?.teacherUnlocked);
+    runtimeState.pinn.activeBottomTab = state.activeBottomTab;
     renderControls(checkpoint);
     state.teacherPoints = null;
     updateTaskProgress();
@@ -120,10 +125,12 @@ export function createPinnCell({ ui, runtimeState, shell }) {
 
   function leave() {
     syncPinnControlsToRuntime();
+      runtimeState.pinn.activeBottomTab = state.activeBottomTab;
     if (state.previewTimer) {
       window.clearTimeout(state.previewTimer);
       state.previewTimer = null;
     }
+      runtimeState.pinn.activeBottomTab = state.activeBottomTab;
     if (state.teacherPreviewTimer) {
       window.clearTimeout(state.teacherPreviewTimer);
       state.teacherPreviewTimer = null;
@@ -927,6 +934,7 @@ export function createPinnCell({ ui, runtimeState, shell }) {
       }
       if (message.type === "fem_baseline") {
         state.femBaseline = message.stress_grid;
+        runtimeState.pinn.femBaseline = message.stress_grid;
         renderPinnViews();
         return;
       }

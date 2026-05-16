@@ -7,7 +7,7 @@ import {
   buildFigureShell,
   makeFrameScheduler,
   setupCanvas,
-} from "../figure-base.js?v=checkpoint-shell-14";
+} from "../figure-base.js?v=checkpoint-shell-15";
 
 const NX = 28;
 const NY = 28;

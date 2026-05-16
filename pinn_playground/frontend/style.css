@@ -866,3 +866,439 @@ body {
   line-height: 1.55;
 }
 .lesson-coach ul { margin: 0; padding-left: 1.1rem; line-height: 1.6; }
+
+/* ------------------------------------------------------------------ */
+/* Global AI Tutor                                                    */
+/* ------------------------------------------------------------------ */
+
+.tutor-launcher-wrap {
+  margin-bottom: 0.9rem;
+}
+
+.tutor-launcher {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  border-radius: 0.85rem;
+  border: 1px solid rgba(34, 211, 238, 0.6);
+  background: linear-gradient(135deg, rgba(14, 116, 144, 0.88), rgba(15, 23, 42, 0.92));
+  color: rgb(186, 230, 253);
+  padding: 0.75rem 1rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  cursor: pointer;
+  box-shadow: 0 10px 24px rgba(8, 47, 73, 0.28);
+  transition: border-color 0.15s ease, transform 0.15s ease, background 0.15s ease, box-shadow 0.15s ease;
+}
+
+.tutor-launcher:hover {
+  border-color: rgba(125, 211, 252, 0.85);
+  background: linear-gradient(135deg, rgba(6, 182, 212, 0.32), rgba(15, 23, 42, 1));
+  box-shadow: 0 14px 28px rgba(8, 47, 73, 0.36);
+  transform: translateY(-1px);
+}
+
+.tutor-launcher-dot {
+  width: 0.55rem;
+  height: 0.55rem;
+  border-radius: 999px;
+  background: rgb(34, 211, 238);
+  box-shadow: 0 0 0 4px rgba(34, 211, 238, 0.18);
+}
+
+.tutor-launcher-label {
+  flex: 1;
+  text-align: left;
+  font-size: 0.95rem;
+}
+
+.tutor-launcher-hint {
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.18em;
+  color: rgba(186, 230, 253, 0.75);
+}
+
+.tutor-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(2, 6, 23, 0.55);
+  opacity: 0;
+  transition: opacity 0.2s ease;
+  z-index: 90;
+}
+.tutor-backdrop-open { opacity: 1; }
+
+.tutor-panel {
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: min(560px, 100vw);
+  background: rgb(2, 6, 23);
+  border-left: 1px solid rgb(30, 41, 59);
+  box-shadow: -24px 0 48px rgba(0, 0, 0, 0.5);
+  display: flex;
+  flex-direction: column;
+  transform: translateX(100%);
+  transition: transform 0.2s ease;
+  z-index: 100;
+}
+.tutor-panel-open { transform: translateX(0); }
+
+.tutor-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 1rem 1.25rem;
+  border-bottom: 1px solid rgb(30, 41, 59);
+}
+.tutor-header-titles { display: flex; flex-direction: column; gap: 0.15rem; }
+.tutor-eyebrow {
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: rgb(125, 211, 252);
+}
+.tutor-context-label {
+  font-size: 1rem;
+  font-weight: 600;
+  color: rgb(241, 245, 249);
+}
+.tutor-model-status {
+  width: fit-content;
+  max-width: 100%;
+  border-radius: 999px;
+  border: 1px solid rgb(51, 65, 85);
+  padding: 0.16rem 0.55rem;
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: rgb(148, 163, 184);
+  white-space: nowrap;
+}
+.tutor-model-status-ready {
+  border-color: rgba(45, 212, 191, 0.45);
+  background: rgba(20, 83, 45, 0.28);
+  color: rgb(153, 246, 228);
+}
+.tutor-model-status-warn {
+  border-color: rgba(245, 158, 11, 0.45);
+  background: rgba(120, 53, 15, 0.25);
+  color: rgb(253, 224, 71);
+}
+.tutor-close {
+  background: transparent;
+  border: 1px solid rgb(51, 65, 85);
+  color: rgb(203, 213, 225);
+  border-radius: 0.5rem;
+  width: 2rem;
+  height: 2rem;
+  cursor: pointer;
+}
+.tutor-close:hover { border-color: rgb(148, 163, 184); color: rgb(248, 250, 252); }
+
+.tutor-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.75rem 1.25rem;
+  border-bottom: 1px solid rgb(30, 41, 59);
+}
+
+.tutor-toolbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.tutor-mode-switch {
+  display: inline-flex;
+  background: rgb(15, 23, 42);
+  border-radius: 999px;
+  padding: 0.2rem;
+  border: 1px solid rgb(30, 41, 59);
+}
+.tutor-mode-pill {
+  border: none;
+  background: transparent;
+  color: rgb(148, 163, 184);
+  font-size: 0.78rem;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  padding: 0.35rem 0.85rem;
+  border-radius: 999px;
+  cursor: pointer;
+}
+.tutor-mode-pill-active {
+  background: rgb(8, 145, 178);
+  color: rgb(236, 254, 255);
+}
+
+.tutor-clear {
+  background: transparent;
+  border: 1px solid rgb(51, 65, 85);
+  color: rgb(203, 213, 225);
+  font-size: 0.78rem;
+  padding: 0.4rem 0.85rem;
+  border-radius: 0.5rem;
+  cursor: pointer;
+}
+.tutor-clear:hover { border-color: rgb(248, 113, 113); color: rgb(254, 205, 211); }
+
+.tutor-think-toggle {
+  background: transparent;
+  border: 1px solid rgb(51, 65, 85);
+  color: rgb(203, 213, 225);
+  font-size: 0.78rem;
+  font-weight: 600;
+  padding: 0.4rem 0.85rem;
+  border-radius: 0.5rem;
+  cursor: pointer;
+}
+
+.tutor-think-toggle:hover {
+  border-color: rgb(125, 211, 252);
+  color: rgb(224, 242, 254);
+}
+
+.tutor-think-toggle-active {
+  border-color: rgba(14, 165, 233, 0.55);
+  background: rgba(8, 47, 73, 0.6);
+  color: rgb(186, 230, 253);
+}
+
+.tutor-thread {
+  flex: 1;
+  overflow-y: auto;
+  padding: 1rem 1.25rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+}
+
+.tutor-empty {
+  border: 1px dashed rgb(51, 65, 85);
+  border-radius: 0.85rem;
+  padding: 1rem;
+  color: rgb(148, 163, 184);
+}
+.tutor-empty-title { color: rgb(226, 232, 240); font-weight: 600; margin-bottom: 0.35rem; }
+.tutor-empty-copy { font-size: 0.88rem; line-height: 1.55; }
+
+.tutor-bubble {
+  border-radius: 0.85rem;
+  padding: 0.75rem 0.9rem;
+  border: 1px solid rgb(30, 41, 59);
+  background: rgb(15, 23, 42);
+}
+.tutor-bubble-user {
+  align-self: flex-end;
+  background: rgb(8, 47, 73);
+  border-color: rgba(125, 211, 252, 0.35);
+  max-width: 85%;
+}
+.tutor-bubble-assistant {
+  align-self: flex-start;
+  max-width: 95%;
+}
+.tutor-bubble-meta {
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.18em;
+  color: rgb(148, 163, 184);
+  margin-bottom: 0.35rem;
+}
+.tutor-bubble-body p {
+  margin: 0 0 0.5rem 0;
+  color: rgb(226, 232, 240);
+  font-size: 0.92rem;
+  line-height: 1.55;
+}
+.tutor-bubble-body p:last-child { margin-bottom: 0; }
+
+.tutor-suggestion {
+  margin-top: 0.75rem;
+  border: 1px solid rgba(244, 114, 182, 0.45);
+  background: rgba(131, 24, 67, 0.18);
+  border-radius: 0.75rem;
+  padding: 0.75rem;
+}
+.tutor-suggestion-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  margin-bottom: 0.4rem;
+}
+.tutor-suggestion-title {
+  font-size: 0.78rem;
+  text-transform: uppercase;
+  letter-spacing: 0.16em;
+  color: rgb(251, 207, 232);
+  font-weight: 700;
+}
+.tutor-suggestion-status {
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  border-radius: 999px;
+  padding: 0.2rem 0.5rem;
+  border: 1px solid currentColor;
+}
+.tutor-suggestion-status-applied { color: rgb(134, 239, 172); }
+.tutor-suggestion-status-dismissed { color: rgb(148, 163, 184); }
+.tutor-suggestion-rationale {
+  margin: 0 0 0.5rem 0;
+  font-size: 0.86rem;
+  color: rgb(243, 232, 255);
+  line-height: 1.5;
+}
+.tutor-suggestion-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.82rem;
+}
+.tutor-suggestion-table th,
+.tutor-suggestion-table td {
+  text-align: left;
+  padding: 0.3rem 0.4rem;
+  border-bottom: 1px solid rgba(244, 114, 182, 0.18);
+  color: rgb(226, 232, 240);
+}
+.tutor-suggestion-table th {
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  color: rgb(251, 207, 232);
+}
+.tutor-suggestion-key { color: rgb(248, 250, 252); font-weight: 600; }
+.tutor-suggestion-from { color: rgb(148, 163, 184); }
+.tutor-suggestion-to   { color: rgb(252, 165, 165); font-weight: 600; }
+
+.tutor-suggestion-actions {
+  display: flex;
+  gap: 0.5rem;
+  margin-top: 0.6rem;
+}
+.tutor-apply {
+  background: rgb(190, 24, 93);
+  color: rgb(253, 232, 252);
+  border: none;
+  border-radius: 0.5rem;
+  padding: 0.4rem 0.75rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+.tutor-apply:hover { background: rgb(219, 39, 119); }
+.tutor-dismiss {
+  background: transparent;
+  border: 1px solid rgb(71, 85, 105);
+  color: rgb(203, 213, 225);
+  border-radius: 0.5rem;
+  padding: 0.4rem 0.75rem;
+  cursor: pointer;
+}
+.tutor-highlight-toggle {
+  background: transparent;
+  border: 1px solid rgba(244, 114, 182, 0.45);
+  color: rgb(251, 207, 232);
+  border-radius: 0.5rem;
+  padding: 0.4rem 0.75rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+.tutor-highlight-toggle:hover {
+  background: rgba(131, 24, 67, 0.22);
+}
+
+.tutor-citations,
+.tutor-warnings {
+  margin-top: 0.5rem;
+  font-size: 0.78rem;
+  color: rgb(148, 163, 184);
+}
+.tutor-citations summary,
+.tutor-warnings summary {
+  cursor: pointer;
+  color: rgb(186, 230, 253);
+}
+.tutor-citation-type {
+  text-transform: uppercase;
+  font-size: 0.65rem;
+  letter-spacing: 0.16em;
+  color: rgb(125, 211, 252);
+  margin-right: 0.4rem;
+}
+
+.tutor-composer {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding: 0.85rem 1.25rem 1.1rem 1.25rem;
+  border-top: 1px solid rgb(30, 41, 59);
+  background: rgb(2, 6, 23);
+}
+.tutor-input {
+  width: 100%;
+  resize: vertical;
+  min-height: 3rem;
+  max-height: 12rem;
+  border-radius: 0.65rem;
+  border: 1px solid rgb(51, 65, 85);
+  background: rgb(15, 23, 42);
+  color: rgb(241, 245, 249);
+  padding: 0.6rem 0.7rem;
+  font-size: 0.92rem;
+  line-height: 1.45;
+}
+.tutor-input:focus {
+  outline: none;
+  border-color: rgb(56, 189, 248);
+  box-shadow: 0 0 0 2px rgba(56, 189, 248, 0.25);
+}
+.tutor-composer-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+.tutor-state-hint {
+  font-size: 0.72rem;
+  color: rgb(148, 163, 184);
+}
+.tutor-send {
+  background: rgb(34, 211, 238);
+  color: rgb(2, 6, 23);
+  border: none;
+  border-radius: 0.6rem;
+  padding: 0.5rem 1rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+.tutor-send:disabled {
+  background: rgb(51, 65, 85);
+  color: rgb(148, 163, 184);
+  cursor: not-allowed;
+}
+
+.tutor-control-highlight {
+  background: rgba(244, 114, 182, 0.18);
+  box-shadow: 0 0 0 2px rgba(244, 114, 182, 0.55), 0 0 0 6px rgba(244, 114, 182, 0.18);
+  border-radius: 0.65rem;
+}
+@keyframes tutor-control-pulse {
+  0%   { background: rgba(244, 114, 182, 0.25); }
+  100% { background: transparent; }
+}
+
+@media (max-width: 700px) {
+  .tutor-panel { width: 100vw; }
+}

@@ -1,0 +1,79 @@
+{
+  "version": 1,
+  "presets": [
+    {
+      "id": "pinn-baseline",
+      "title": "Baseline PINN warm-up",
+      "checkpointIds": ["pinn-session"],
+      "intent": "Stable baseline run with no teacher supervision. Use this as the reference point for later comparisons.",
+      "controls": {
+        "samplingStrategy": "uniform",
+        "nDomain": "1200",
+        "nBoundary": "200",
+        "epochs": "800",
+        "pdeWeight": "1.0",
+        "bcWeight": "5.0",
+        "normalizeInputs": true
+      },
+      "notes": "Set sensible defaults before introducing any teacher-guided supervision. Confirm the loss curves decrease smoothly."
+    },
+    {
+      "id": "pinn-interior-teacher-only",
+      "title": "Interior teacher points only",
+      "checkpointIds": ["pinn-session"],
+      "intent": "Isolate the effect of displacement supervision in the bulk of the domain.",
+      "controls": {
+        "teacherInterior": "120",
+        "teacherBoundary": "0",
+        "teacherLoadPatch": "0",
+        "teacherWeight": "10.0"
+      },
+      "notes": "Interior supervision usually gives only modest improvement on stress accuracy, because Neumann loading is the dominant unmet constraint."
+    },
+    {
+      "id": "pinn-load-patch-teacher-only",
+      "title": "Load-patch teacher points only",
+      "checkpointIds": ["pinn-session"],
+      "intent": "Anchor displacement exactly where the traction enters the domain.",
+      "controls": {
+        "teacherInterior": "0",
+        "teacherBoundary": "0",
+        "teacherLoadPatch": "30",
+        "teacherWeight": "10.0"
+      },
+      "notes": "Load-patch supervision is typically the strongest single intervention for stress accuracy, because it directly corrects the Neumann residual near the traction."
+    },
+    {
+      "id": "pinn-fourier-bandwidth-stress",
+      "title": "Fourier features for sharper stress",
+      "checkpointIds": ["pinn-session"],
+      "intent": "Reduce spectral bias when the stress field looks too smooth near the load patch.",
+      "controls": {
+        "fourierFeatures": true,
+        "fourierSigma": "1.5"
+      },
+      "notes": "Try sigma in [1.0, 2.0] for stress problems. Larger sigma encodes higher-frequency content but can introduce noise."
+    },
+    {
+      "id": "pinn-adaptive-sampling",
+      "title": "Adaptive collocation",
+      "checkpointIds": ["pinn-session"],
+      "intent": "Concentrate collocation points where the PDE residual is largest.",
+      "controls": {
+        "samplingStrategy": "adaptive",
+        "residualResampleEvery": "200"
+      },
+      "notes": "Useful when the loss plateaus mid-training. Keep some uniform points so the network does not forget the rest of the domain."
+    },
+    {
+      "id": "fem-mesh-refine",
+      "title": "Refine the FEM mesh",
+      "checkpointIds": ["numerical-session"],
+      "intent": "Reduce discretization error in the structured FEM baseline.",
+      "controls": {
+        "nCells": "80"
+      },
+      "notes": "Doubling cells per side roughly quarters interpolation error in smooth regions, at higher solve cost."
+    }
+  ]
+}

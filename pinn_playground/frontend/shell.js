@@ -1,9 +1,9 @@
-import { canAdvanceCheckpoint, getCompletionMessage } from "./checkpoint-rules.js?v=checkpoint-shell-14";
-import { installDiagnosticsDebugHook } from "./diagnostics.js?v=checkpoint-shell-14";
-import { createNumericalCell } from "./numerical-cell.js?v=checkpoint-shell-14";
-import { createPinnCell } from "./pinn-cell.js?v=checkpoint-shell-14";
-import { createTutorialCell } from "./tutorial-cell.js?v=checkpoint-shell-14";
-import { initializeShellPlots } from "./plots.js?v=checkpoint-shell-14";
+import { canAdvanceCheckpoint, getCompletionMessage } from "./checkpoint-rules.js?v=checkpoint-shell-15";
+import { installDiagnosticsDebugHook } from "./diagnostics.js?v=checkpoint-shell-15";
+import { createNumericalCell } from "./numerical-cell.js?v=checkpoint-shell-15";
+import { createPinnCell } from "./pinn-cell.js?v=checkpoint-shell-15";
+import { createTutorialCell } from "./tutorial-cell.js?v=checkpoint-shell-15";
+import { initializeShellPlots } from "./plots.js?v=checkpoint-shell-15";
 
 export function createAppShell({ ui, progressStore }) {
   const runtimeState = {
@@ -112,6 +112,8 @@ export function createAppShell({ ui, progressStore }) {
 
   progressStore.subscribe(render);
   render(progressStore.getState());
+
+  return { runtimeState, shellHelpers };
 
   function render(state) {
     const checkpoint = progressStore.getActiveCheckpoint();

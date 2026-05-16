@@ -7,13 +7,13 @@
 // be added in a later milestone if needed. For now we use Unicode (²₁₂…) and
 // inline `code` for symbols, matching the existing style of the playground.
 
-import { createQuadraticFigure } from "./figures/figure-1-quadratic-fit.js?v=checkpoint-shell-14";
-import { createPolynomialFitFigure } from "./figures/figure-2-polynomial-fit.js?v=checkpoint-shell-14";
-import { createGeneralizationFigure } from "./figures/figure-3-generalization.js?v=checkpoint-shell-14";
-import { createMlpForwardFigure } from "./figures/figure-4-mlp-forward.js?v=checkpoint-shell-14";
-import { createPinnLossFigure } from "./figures/figure-5-pinn-loss.js?v=checkpoint-shell-14";
-import { createPinnFailureFigure } from "./figures/figure-6-failure-modes.js?v=checkpoint-shell-14";
-import { createSurrogateFigure } from "./figures/figure-7-surrogate-loop.js?v=checkpoint-shell-14";
+import { createQuadraticFigure } from "./figures/figure-1-quadratic-fit.js?v=checkpoint-shell-15";
+import { createPolynomialFitFigure } from "./figures/figure-2-polynomial-fit.js?v=checkpoint-shell-15";
+import { createGeneralizationFigure } from "./figures/figure-3-generalization.js?v=checkpoint-shell-15";
+import { createMlpForwardFigure } from "./figures/figure-4-mlp-forward.js?v=checkpoint-shell-15";
+import { createPinnLossFigure } from "./figures/figure-5-pinn-loss.js?v=checkpoint-shell-15";
+import { createPinnFailureFigure } from "./figures/figure-6-failure-modes.js?v=checkpoint-shell-15";
+import { createSurrogateFigure } from "./figures/figure-7-surrogate-loop.js?v=checkpoint-shell-15";
 
 export const TUTORIAL_INTRO = `
   <p>

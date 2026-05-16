@@ -1,9 +1,9 @@
 // Tutorial cell. Renders the PINN tutorial sections + their interactive
 // figures into the workspace, replacing the usual three-plot layout while
 // the user is on the pinn-tutorial checkpoint.
-import { TUTORIAL_INTRO, TUTORIAL_SECTIONS } from "./lessons/tutorial-content.js?v=checkpoint-shell-14";
+import { TUTORIAL_INTRO, TUTORIAL_SECTIONS } from "./lessons/tutorial-content.js?v=checkpoint-shell-15";
 
-export function createTutorialCell({ ui, shell }) {
+export function createTutorialCell({ ui, runtimeState, shell }) {
   const state = {
     activeSectionId: TUTORIAL_SECTIONS[0].id,
     figureInstances: new Map(),
@@ -11,6 +11,7 @@ export function createTutorialCell({ ui, shell }) {
   };
 
   function enter(checkpoint) {
+    syncRuntimeTutorialContext();
     shell.setBottomPanelVisible(false);
     hideStandardPlots(true);
     shell.setStatus("Reading the tutorial", {
@@ -46,6 +47,9 @@ export function createTutorialCell({ ui, shell }) {
     if (state.container) {
       state.container.remove();
       state.container = null;
+    }
+    if (runtimeState.tutorial) {
+      runtimeState.tutorial.active = false;
     }
     hideStandardPlots(false);
   }
@@ -95,6 +99,7 @@ export function createTutorialCell({ ui, shell }) {
   function renderTutorialBody() {
     destroyFigures();
     const activeSection = TUTORIAL_SECTIONS.find((section) => section.id === state.activeSectionId) ?? TUTORIAL_SECTIONS[0];
+    syncRuntimeTutorialContext(activeSection);
     let container = state.container;
     if (!container) {
       container = document.createElement("section");
@@ -137,5 +142,29 @@ export function createTutorialCell({ ui, shell }) {
     }
   }
 
+  function syncRuntimeTutorialContext(section = null) {
+    const activeSection = section
+      ?? TUTORIAL_SECTIONS.find((entry) => entry.id === state.activeSectionId)
+      ?? TUTORIAL_SECTIONS[0];
+    const sectionIndex = TUTORIAL_SECTIONS.findIndex((entry) => entry.id === activeSection.id);
+    runtimeState.tutorial = {
+      active: true,
+      title: "PINN Tutorial Notes",
+      introText: htmlToPlainText(TUTORIAL_INTRO),
+      activeSectionId: activeSection.id,
+      activeSectionTitle: activeSection.title,
+      activeSectionText: htmlToPlainText(activeSection.body),
+      activeSectionIndex: sectionIndex >= 0 ? sectionIndex + 1 : null,
+      sectionCount: TUTORIAL_SECTIONS.length,
+    };
+    document.dispatchEvent(new CustomEvent("pinn:tutorial-context-change"));
+  }
+
   return { enter, leave };
+}
+
+function htmlToPlainText(html) {
+  const el = document.createElement("div");
+  el.innerHTML = html;
+  return (el.textContent ?? "").replace(/\s+/g, " ").trim();
 }

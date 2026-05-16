@@ -1,5 +1,6 @@
-import { createProgressStore } from "./progress-state.js?v=checkpoint-shell-14";
-import { createAppShell } from "./shell.js?v=checkpoint-shell-14";
+import { createProgressStore } from "./progress-state.js?v=checkpoint-shell-15";
+import { createAppShell } from "./shell.js?v=checkpoint-shell-15";
+import { createTutor } from "./tutor.js?v=checkpoint-shell-15";
 
 function bootstrap() {
   const ui = {
@@ -38,7 +39,8 @@ function bootstrap() {
   };
 
   const progressStore = createProgressStore();
-  createAppShell({ ui, progressStore });
+  const shell = createAppShell({ ui, progressStore });
+  createTutor({ ui, runtimeState: shell.runtimeState, progressStore });
 }
 
 bootstrap();

@@ -7,7 +7,7 @@ import {
   makeFrameScheduler,
   makeRng,
   setupCanvas,
-} from "../figure-base.js?v=checkpoint-shell-14";
+} from "../figure-base.js?v=checkpoint-shell-15";
 
 function samplePoints(seed) {
   const rng = makeRng(seed);
