@@ -27,19 +27,60 @@ export function createPinnCell({ ui, runtimeState, shell }) {
     teacherPoints: null,
     teacherPreviewTimer: null,
     teacherLocked: true,
+    activeTrainingConfig: null,
     taskState: createInitialTaskState(),
   };
 
   function createInitialTaskState() {
     return {
-      previewReady: false,
-      trainingObserved: false,
+      domainAdjusted: false,
+      boundaryAdjusted: false,
+      trainingCompleted: false,
       comparisonViewed: false,
+      interiorTeacherTrainingCompleted: false,
+      loadPatchTeacherTrainingCompleted: false,
     };
   }
 
   function isTeacherUnlocked() {
     return !state.teacherLocked;
+  }
+
+  function isInteriorTeacherOnlyRun(config) {
+    const teacher = config?.teacher;
+    return Boolean(
+      teacher?.enabled
+      && Number(teacher.n_interior) > 0
+      && Number(teacher.n_boundary) === 0
+      && Number(teacher.n_load_patch) === 0,
+    );
+  }
+
+  function isLoadPatchTeacherOnlyRun(config) {
+    const teacher = config?.teacher;
+    return Boolean(
+      teacher?.enabled
+      && Number(teacher.n_load_patch) > 0
+      && Number(teacher.n_interior) === 0
+      && Number(teacher.n_boundary) === 0,
+    );
+  }
+
+  function unlockTeacherSupervision() {
+    if (!state.teacherLocked) {
+      return;
+    }
+    if (!runtimeState.pinn) {
+      runtimeState.pinn = {};
+    }
+    syncPinnControlsToRuntime();
+    state.teacherLocked = false;
+    runtimeState.pinn.teacherUnlocked = true;
+    renderControls();
+    renderPinnViews();
+    if (!state.isTraining) {
+      scheduleTeacherPreview();
+    }
   }
 
   function getMergedPinnControls() {
@@ -66,7 +107,7 @@ export function createPinnCell({ ui, runtimeState, shell }) {
 
   function enter(checkpoint) {
     state.currentCheckpointId = checkpoint.id;
-    state.teacherLocked = Boolean(checkpoint.teacherLocked);
+    state.teacherLocked = Boolean(checkpoint.teacherLocked) && !Boolean(runtimeState.pinn?.teacherUnlocked);
     renderControls(checkpoint);
     state.teacherPoints = null;
     updateTaskProgress();
@@ -99,6 +140,7 @@ export function createPinnCell({ ui, runtimeState, shell }) {
     state.femBaseline = null;
     state.teacherPoints = null;
     state.teacherLocked = true;
+    state.activeTrainingConfig = null;
     state.taskState = createInitialTaskState();
     if (runtimeState.taskProgress) {
       delete runtimeState.taskProgress[PINN_SESSION_CHECKPOINT_ID];
@@ -126,7 +168,7 @@ export function createPinnCell({ ui, runtimeState, shell }) {
     const v = getMergedPinnControls();
     const teacherSection = isTeacherUnlocked()
       ? `
-      <details class="toggle-panel" open>
+      <details class="toggle-panel">
         <summary>Teacher Supervision</summary>
         <div class="mt-4 space-y-3">
           <p class="text-xs text-slate-400">
@@ -172,13 +214,21 @@ export function createPinnCell({ ui, runtimeState, shell }) {
       </details>
       `
       : `
-      <details class="toggle-panel">
-        <summary>Teacher Supervision (Locked)</summary>
-        <div class="mt-4 checkpoint-placeholder text-sm text-slate-300">
-          Teacher supervision will stay locked in this merged workspace for now. Use this session to preview collocation, run baseline PINN training, and compare back to FEM first.
+      <section class="control-card space-y-3">
+        <div>
+          <p class="text-xs font-semibold uppercase tracking-[0.22em] text-slate-400">Teacher Supervision (Locked)</p>
+          <p class="mt-2 text-sm leading-6 text-slate-300">
+            Teacher supervision unlocks after you finish the baseline collocation, training, and FEM comparison tasks in this workspace.
+          </p>
         </div>
-      </details>
+        <div class="checkpoint-placeholder text-sm text-slate-300">
+          Finish the first three PINN tasks to unlock interior and load-patch teacher-point experiments.
+        </div>
+      </section>
       `;
+
+    const adaptiveSamplingEnabled = v.samplingStrategy === "adaptive";
+    const fourierFeaturesEnabled = Boolean(v.fourierFeatures);
 
     ui.controlsForm.innerHTML = `
       <details class="toggle-panel">
@@ -251,16 +301,8 @@ export function createPinnCell({ ui, runtimeState, shell }) {
       </details>
 
       <details class="toggle-panel">
-        <summary>Sampling</summary>
+        <summary>Training Setup</summary>
         <div class="control-section-grid mt-4 lg:grid-cols-2">
-          <div class="control-card">
-            <label for="pinn-sampling-strategy" class="field-label">Sampling Strategy</label>
-            <select id="pinn-sampling-strategy" class="field-input">
-              <option value="uniform" ${v.samplingStrategy === "uniform" ? "selected" : ""}>Uniform</option>
-              <option value="adaptive" ${v.samplingStrategy === "adaptive" ? "selected" : ""}>Adaptive</option>
-            </select>
-            <p class="field-help">Adaptive sampling adds more points near corners and brace joints.</p>
-          </div>
           <div class="control-card">
             <div class="range-row">
               <label for="pinn-n-domain">Domain Points</label>
@@ -277,50 +319,28 @@ export function createPinnCell({ ui, runtimeState, shell }) {
             <input id="pinn-n-boundary" type="range" min="16" max="600" step="8" value="${v.nBoundary}" class="field-range" />
             <p class="field-help">Boundary points teach the support and traction conditions.</p>
           </div>
-          <div class="control-card lg:col-span-2">
+          <div class="control-card">
             <div class="range-row">
-              <label for="pinn-residual-resample-every">Residual Resample Every (epochs)</label>
-              <span id="pinn-residual-resample-every-value" class="range-value"></span>
+              <label for="pinn-pde-weight">PDE Weight</label>
+              <span id="pinn-pde-weight-value" class="range-value"></span>
             </div>
-            <input id="pinn-residual-resample-every" type="range" min="0" max="1000" step="50" value="${v.residualResampleEvery}" class="field-range" />
-            <p class="field-help">Only used when the sampling strategy is <em>Adaptive</em>. Periodically replaces 70% of the interior points with new ones drawn where the equilibrium residual is largest. Set to 0 to disable.</p>
+            <input id="pinn-pde-weight" type="range" min="0.2" max="10" step="0.1" value="${v.pdeWeight}" class="field-range" />
+            <p class="field-help">Higher values emphasize interior equilibrium.</p>
+          </div>
+          <div class="control-card">
+            <div class="range-row">
+              <label for="pinn-bc-weight">BC Weight</label>
+              <span id="pinn-bc-weight-value" class="range-value"></span>
+            </div>
+            <input id="pinn-bc-weight" type="range" min="0.2" max="10" step="0.1" value="${v.bcWeight}" class="field-range" />
+            <p class="field-help">Higher values emphasize support and loading conditions.</p>
           </div>
         </div>
       </details>
 
       <details class="toggle-panel">
-        <summary>PINN and Training</summary>
+        <summary>Model Architecture</summary>
         <div class="control-section-grid mt-4 lg:grid-cols-2">
-          <div class="control-card">
-            <div class="range-row">
-              <label for="pinn-epochs">Epochs</label>
-              <span id="pinn-epochs-value" class="range-value"></span>
-            </div>
-            <input id="pinn-epochs" type="range" min="50" max="5000" step="50" value="${v.epochs}" class="field-range" />
-            <p class="field-help">Longer runs usually produce smoother loss and stress histories.</p>
-          </div>
-          <div class="control-card flex items-center justify-between gap-4">
-            <div>
-              <label for="pinn-normalize-inputs" class="text-sm font-medium text-slate-200">Input Normalization</label>
-              <p class="text-xs text-slate-400">Maps coordinates to [-1, 1] before the PINN.</p>
-            </div>
-            <input id="pinn-normalize-inputs" type="checkbox" ${v.normalizeInputs ? "checked" : ""} class="h-5 w-5 rounded border-slate-600 bg-slate-800 text-cyan-400 focus:ring-cyan-400" />
-          </div>
-          <div class="control-card flex items-center justify-between gap-4">
-            <div>
-              <label for="pinn-fourier-features" class="text-sm font-medium text-slate-200">Fourier Features</label>
-              <p class="text-xs text-slate-400">Random sin/cos input encoding to overcome the smooth-MLP spectral bias.</p>
-            </div>
-            <input id="pinn-fourier-features" type="checkbox" ${v.fourierFeatures ? "checked" : ""} class="h-5 w-5 rounded border-slate-600 bg-slate-800 text-cyan-400 focus:ring-cyan-400" />
-          </div>
-          <div class="control-card">
-            <div class="range-row">
-              <label for="pinn-fourier-sigma">Fourier Bandwidth (σ)</label>
-              <span id="pinn-fourier-sigma-value" class="range-value"></span>
-            </div>
-            <input id="pinn-fourier-sigma" type="range" min="0.2" max="5.0" step="0.1" value="${v.fourierSigma}" class="field-range" />
-            <p class="field-help">Frequency scale of the Fourier encoding. Small σ ≈ smooth field; large σ ≈ noisy field. Try 1–2 for stress problems.</p>
-          </div>
           <div class="control-card">
             <div class="range-row">
               <label for="pinn-hidden-dim">Hidden Width</label>
@@ -341,38 +361,76 @@ export function createPinnCell({ ui, runtimeState, shell }) {
       </details>
 
       <details class="toggle-panel">
-        <summary>Loss Weighting and Run Control</summary>
+        <summary>Advanced Training</summary>
         <div class="mt-4 space-y-4">
           <div class="control-section-grid lg:grid-cols-2">
-            <div class="control-card">
-              <div class="range-row">
-                <label for="pinn-pde-weight">PDE Weight</label>
-                <span id="pinn-pde-weight-value" class="range-value"></span>
+            <div class="control-card flex items-center justify-between gap-4 lg:col-span-2">
+              <div>
+                <label for="pinn-normalize-inputs" class="text-sm font-medium text-slate-200">Input Normalization</label>
+                <p class="text-xs text-slate-400">Maps coordinates to [-1, 1] before the PINN.</p>
               </div>
-              <input id="pinn-pde-weight" type="range" min="0.2" max="10" step="0.1" value="${v.pdeWeight}" class="field-range" />
-              <p class="field-help">Higher values emphasize interior equilibrium.</p>
+              <input id="pinn-normalize-inputs" type="checkbox" ${v.normalizeInputs ? "checked" : ""} class="h-5 w-5 rounded border-slate-600 bg-slate-800 text-cyan-400 focus:ring-cyan-400" />
+            </div>
+            <div class="control-card flex items-center justify-between gap-4">
+              <div>
+                <label for="pinn-adaptive-sampling" class="text-sm font-medium text-slate-200">Adaptive Sampling</label>
+                <p class="text-xs text-slate-400">Resamples collocation points where the residual stays largest.</p>
+              </div>
+              <input id="pinn-adaptive-sampling" type="checkbox" ${adaptiveSamplingEnabled ? "checked" : ""} class="h-5 w-5 rounded border-slate-600 bg-slate-800 text-cyan-400 focus:ring-cyan-400" />
             </div>
             <div class="control-card">
               <div class="range-row">
-                <label for="pinn-bc-weight">BC Weight</label>
-                <span id="pinn-bc-weight-value" class="range-value"></span>
+                <label for="pinn-residual-resample-every">Residual Resample Every (epochs)</label>
+                <span id="pinn-residual-resample-every-value" class="range-value"></span>
               </div>
-              <input id="pinn-bc-weight" type="range" min="0.2" max="10" step="0.1" value="${v.bcWeight}" class="field-range" />
-              <p class="field-help">Higher values emphasize support and loading conditions.</p>
+              <input id="pinn-residual-resample-every" type="range" min="0" max="1000" step="50" value="${v.residualResampleEvery}" class="field-range" ${adaptiveSamplingEnabled ? "" : "disabled"} />
+              <p class="field-help">Used with adaptive sampling to replace interior points where the equilibrium residual remains largest. Set to 0 to disable resampling.</p>
             </div>
-          </div>
-          <div class="grid gap-3 lg:grid-cols-2">
-            <button id="pinn-start-button" type="button" class="rounded-xl bg-cyan-500 px-4 py-3 font-semibold text-slate-950 transition hover:bg-cyan-400">
-              Start Training
-            </button>
-            <button id="pinn-stop-button" type="button" class="rounded-xl border border-rose-500/70 bg-rose-500/10 px-4 py-3 font-semibold text-rose-200 transition hover:bg-rose-500/20" disabled>
-              Stop
-            </button>
+            <div class="control-card flex items-center justify-between gap-4">
+              <div>
+                <label for="pinn-fourier-features" class="text-sm font-medium text-slate-200">Fourier Features</label>
+                <p class="text-xs text-slate-400">Random sin/cos input encoding to overcome the smooth-MLP spectral bias.</p>
+              </div>
+              <input id="pinn-fourier-features" type="checkbox" ${fourierFeaturesEnabled ? "checked" : ""} class="h-5 w-5 rounded border-slate-600 bg-slate-800 text-cyan-400 focus:ring-cyan-400" />
+            </div>
+            <div class="control-card">
+              <div class="range-row">
+                <label for="pinn-fourier-sigma">Fourier Bandwidth (σ)</label>
+                <span id="pinn-fourier-sigma-value" class="range-value"></span>
+              </div>
+              <input id="pinn-fourier-sigma" type="range" min="0.2" max="5.0" step="0.1" value="${v.fourierSigma}" class="field-range" ${fourierFeaturesEnabled ? "" : "disabled"} />
+              <p class="field-help">Frequency scale of the Fourier encoding. Small σ ≈ smooth field; large σ ≈ noisy field. Try 1–2 for stress problems.</p>
+            </div>
           </div>
         </div>
       </details>
 
       ${teacherSection}
+
+      <section class="control-card space-y-4">
+        <div>
+          <p class="text-xs font-semibold uppercase tracking-[0.22em] text-cyan-300">Run Control</p>
+          <p class="mt-2 text-sm leading-6 text-slate-300">
+            Start or stop the current PINN run after you finish adjusting geometry, training setup, and advanced options.
+          </p>
+        </div>
+        <div class="control-card">
+          <div class="range-row">
+            <label for="pinn-epochs">Epochs</label>
+            <span id="pinn-epochs-value" class="range-value"></span>
+          </div>
+          <input id="pinn-epochs" type="range" min="50" max="5000" step="50" value="${v.epochs}" class="field-range" />
+          <p class="field-help">Longer runs usually produce smoother loss and stress histories.</p>
+        </div>
+        <div class="grid gap-3 lg:grid-cols-2">
+          <button id="pinn-start-button" type="button" class="rounded-xl bg-cyan-500 px-4 py-3 font-semibold text-slate-950 transition hover:bg-cyan-400">
+            Start Training
+          </button>
+          <button id="pinn-stop-button" type="button" class="rounded-xl border border-rose-500/70 bg-rose-500/10 px-4 py-3 font-semibold text-rose-200 transition hover:bg-rose-500/20" disabled>
+            Stop
+          </button>
+        </div>
+      </section>
     `;
 
     state.controls = {
@@ -387,7 +445,7 @@ export function createPinnCell({ ui, runtimeState, shell }) {
       patchWidthValue: ui.controlsForm.querySelector("#pinn-patch-width-value"),
       young: ui.controlsForm.querySelector("#pinn-young"),
       poisson: ui.controlsForm.querySelector("#pinn-poisson"),
-      samplingStrategy: ui.controlsForm.querySelector("#pinn-sampling-strategy"),
+      samplingStrategy: ui.controlsForm.querySelector("#pinn-adaptive-sampling"),
       nDomain: ui.controlsForm.querySelector("#pinn-n-domain"),
       nBoundary: ui.controlsForm.querySelector("#pinn-n-boundary"),
       epochs: ui.controlsForm.querySelector("#pinn-epochs"),
@@ -454,8 +512,15 @@ export function createPinnCell({ ui, runtimeState, shell }) {
     controls.filter(Boolean).forEach((control) => {
       const eventName = control.tagName === "SELECT" ? "change" : "input";
       control.addEventListener(eventName, () => {
+        if (control === state.controls.nDomain) {
+          state.taskState.domainAdjusted = true;
+        }
+        if (control === state.controls.nBoundary) {
+          state.taskState.boundaryAdjusted = true;
+        }
         updateValueLabels();
         syncPinnControlsToRuntime();
+        updateTaskProgress();
         schedulePreview();
       });
     });
@@ -485,10 +550,16 @@ export function createPinnCell({ ui, runtimeState, shell }) {
     state.controls.valueLabels.n_hidden_layers.textContent = state.controls.nHiddenLayers.value;
     if (state.controls.valueLabels.residual_resample_every) {
       const v = Number(state.controls.residualResampleEvery.value);
-      state.controls.valueLabels.residual_resample_every.textContent = v === 0 ? "off" : String(v);
+      const adaptiveEnabled = Boolean(state.controls.samplingStrategy?.checked);
+      state.controls.residualResampleEvery.disabled = !adaptiveEnabled;
+      state.controls.valueLabels.residual_resample_every.textContent = adaptiveEnabled && v !== 0 ? String(v) : "off";
     }
     if (state.controls.valueLabels.fourier_sigma) {
-      state.controls.valueLabels.fourier_sigma.textContent = Number(state.controls.fourierSigma.value).toFixed(1);
+      const fourierEnabled = Boolean(state.controls.fourierFeatures?.checked);
+      state.controls.fourierSigma.disabled = !fourierEnabled;
+      state.controls.valueLabels.fourier_sigma.textContent = fourierEnabled
+        ? Number(state.controls.fourierSigma.value).toFixed(1)
+        : "off";
     }
     if (state.controls.valueLabels.teacher_interior && state.controls.teacherInterior) {
       state.controls.valueLabels.teacher_interior.textContent = state.controls.teacherInterior.value;
@@ -606,13 +677,14 @@ export function createPinnCell({ ui, runtimeState, shell }) {
 
   function renderPinnViews() {
     const isTrainOrTeacher = state.currentCheckpointId === PINN_SESSION_CHECKPOINT_ID;
+    const activeTab = state.activeBottomTab;
+    const sharedCompareRange = activeTab === "compare-fem" ? getSharedCompareHeatmapRange() : null;
     if (state.latestPreview) {
       const payloadForPlot =
         state.teacherPoints && isTeacherUnlocked()
           ? { ...state.latestPreview, teacher_points: state.teacherPoints }
           : state.latestPreview;
       renderPointCloudPlot(ui.leftPlot, payloadForPlot);
-      const activeTab = state.activeBottomTab;
       const teacherSummary =
         isTeacherUnlocked() && state.teacherPoints
           ? ` · teacher ${(state.teacherPoints.interior?.x?.length ?? 0)
@@ -629,7 +701,7 @@ export function createPinnCell({ ui, runtimeState, shell }) {
             ? "Training not started yet"
             : "Appears during training",
         bottomTitle: isTrainOrTeacher
-          ? (activeTab === "compare-fem" ? "Compare with Numerical" : "Training Curves")
+          ? (activeTab === "compare-fem" ? "Compare with Numerical" : "Training Monitor")
           : "Preview Notes",
         bottomSummary: isTrainOrTeacher
           ? (state.latestMetrics ? `Epoch ${state.latestMetrics.epoch}` : "Waiting for a training run")
@@ -643,7 +715,7 @@ export function createPinnCell({ ui, runtimeState, shell }) {
 
     if (isTrainOrTeacher) {
       if (state.latestMetrics?.stress_grid) {
-        renderStressHeatmap(ui.rightPlot, state.latestMetrics.stress_grid);
+        renderStressHeatmap(ui.rightPlot, state.latestMetrics.stress_grid, sharedCompareRange);
       } else {
         renderNotePlot(ui.rightPlot, "Von Mises stress", [
           "Start a training run to populate the live stress heatmap.",
@@ -695,15 +767,15 @@ export function createPinnCell({ ui, runtimeState, shell }) {
       </div>`;
     document.getElementById("pinn-tab-btn-training-curve").addEventListener("click", () => {
       state.activeBottomTab = "training-curve";
-      _renderBottomTabs();
+      renderPinnViews();
     });
     document.getElementById("pinn-tab-btn-compare-fem").addEventListener("click", () => {
       state.activeBottomTab = "compare-fem";
-      if (state.femBaseline) {
+      if (state.taskState.trainingCompleted) {
         state.taskState.comparisonViewed = true;
         updateTaskProgress();
       }
-      _renderBottomTabs();
+      renderPinnViews();
     });
   }
 
@@ -725,13 +797,14 @@ export function createPinnCell({ ui, runtimeState, shell }) {
     const lossPane    = document.getElementById("pinn-tab-loss-plot");
     const comparePane = document.getElementById("pinn-tab-compare-content");
     if (!lossPane || !comparePane) return;
+    const sharedCompareRange = getSharedCompareHeatmapRange();
 
     if (state.activeBottomTab === "compare-fem") {
       lossPane.style.display    = "none";
       comparePane.style.display = "flex";
       // Left: FEM baseline
       if (state.femBaseline) {
-        renderStressHeatmap("pinn-baseline-plot", state.femBaseline);
+        renderStressHeatmap("pinn-baseline-plot", state.femBaseline, sharedCompareRange);
       } else {
         renderNotePlot("pinn-baseline-plot", "FEM Baseline", [
           "Running FEM at highest resolution\u2026",
@@ -740,7 +813,7 @@ export function createPinnCell({ ui, runtimeState, shell }) {
       }
       // Right: absolute error (updates every update_every epochs)
       if (state.latestMetrics?.error_grid) {
-        renderErrorHeatmap("pinn-error-plot", state.latestMetrics.error_grid);
+        renderErrorHeatmap("pinn-error-plot", state.latestMetrics.error_grid, sharedCompareRange);
       } else {
         renderNotePlot("pinn-error-plot", "Absolute Error", [
           "Error map appears here once PINN metrics and FEM baseline are both available.",
@@ -750,7 +823,7 @@ export function createPinnCell({ ui, runtimeState, shell }) {
       lossPane.style.display    = "flex";
       comparePane.style.display = "none";
       if (state.losses.epoch.length === 0) {
-        renderNotePlot("pinn-tab-loss-plot", "Training Curves", [
+        renderNotePlot("pinn-tab-loss-plot", "Training Monitor", [
           "A completed or in-progress training run will populate this plot.",
         ]);
       } else {
@@ -761,6 +834,33 @@ export function createPinnCell({ ui, runtimeState, shell }) {
 
   function resetLosses() {
     state.losses = { epoch: [], total: [], pde: [], bc: [], teacher: [] };
+  }
+
+  function getSharedCompareHeatmapRange() {
+    const values = [
+      state.latestMetrics?.stress_grid,
+      state.femBaseline,
+      state.latestMetrics?.error_grid,
+    ]
+      .flatMap((grid) => collectGridValues(grid))
+      .filter(Number.isFinite);
+
+    if (!values.length) {
+      return null;
+    }
+
+    return {
+      min: Math.min(...values),
+      max: Math.max(...values),
+    };
+  }
+
+  function collectGridValues(grid) {
+    if (!grid || !Array.isArray(grid.z)) {
+      return [];
+    }
+
+    return grid.z.flatMap((row) => (Array.isArray(row) ? row : []));
   }
 
   function setTrainingState(isTraining) {
@@ -794,6 +894,9 @@ export function createPinnCell({ ui, runtimeState, shell }) {
     });
     updateGuide();
 
+    const trainingConfig = getConfig();
+    state.activeTrainingConfig = trainingConfig;
+
     const socket = createPinnSocket();
     state.socket = socket;
 
@@ -802,7 +905,7 @@ export function createPinnCell({ ui, runtimeState, shell }) {
         tone: "running",
         detail: "The model is now training on the shared bottom-support and top-traction case for this setup.",
       });
-      socket.send(JSON.stringify({ type: "start", payload: getConfig() }));
+      socket.send(JSON.stringify({ type: "start", payload: trainingConfig }));
     });
 
     socket.addEventListener("message", (event) => {
@@ -861,7 +964,6 @@ export function createPinnCell({ ui, runtimeState, shell }) {
           teacher: [...(state.losses.teacher ?? []), teacherValue],
         };
         state.latestMetrics = message;
-        state.taskState.trainingObserved = true;
         runtimeState.pinn.latestMetrics = message;
         updateTaskProgress({ refresh: false });
         runtimeState.checkpointEvents[state.currentCheckpointId ?? PINN_SESSION_CHECKPOINT_ID] = {
@@ -879,6 +981,17 @@ export function createPinnCell({ ui, runtimeState, shell }) {
       }
       if (message.type === "complete") {
         setTrainingState(false);
+        const completedNormally = message.status !== "stopped";
+        if (completedNormally) {
+          state.taskState.trainingCompleted = true;
+          if (isInteriorTeacherOnlyRun(state.activeTrainingConfig)) {
+            state.taskState.interiorTeacherTrainingCompleted = true;
+          }
+          if (isLoadPatchTeacherOnlyRun(state.activeTrainingConfig)) {
+            state.taskState.loadPatchTeacherTrainingCompleted = true;
+          }
+        }
+        updateTaskProgress();
         runtimeState.checkpointEvents[state.currentCheckpointId ?? PINN_SESSION_CHECKPOINT_ID] = {
           status: "success",
           epoch: message.epoch,
@@ -892,11 +1005,13 @@ export function createPinnCell({ ui, runtimeState, shell }) {
               : `Best total loss ${formatMetric(message.best_total_loss)} at epoch ${message.epoch}.`,
         });
         updateGuide();
+        state.activeTrainingConfig = null;
         socket.close();
         return;
       }
       if (message.type === "error") {
         setTrainingState(false);
+        state.activeTrainingConfig = null;
         runtimeState.checkpointEvents[state.currentCheckpointId ?? PINN_SESSION_CHECKPOINT_ID] = {
           status: "error",
           message: message.message,
@@ -919,6 +1034,7 @@ export function createPinnCell({ ui, runtimeState, shell }) {
       if (state.socket === socket) {
         state.socket = null;
       }
+      state.activeTrainingConfig = null;
       if (state.isTraining) {
         setTrainingState(false);
         shell.setStatus("PINN training disconnected", {
@@ -989,10 +1105,16 @@ export function createPinnCell({ ui, runtimeState, shell }) {
     }
 
     const taskChecks = [
-      { id: "preview-collocation", complete: state.taskState.previewReady },
-      { id: "run-pinn-training", complete: state.taskState.trainingObserved },
+      { id: "define-collocation-points", complete: state.taskState.domainAdjusted && state.taskState.boundaryAdjusted },
+      { id: "run-pinn-training", complete: state.taskState.trainingCompleted },
       { id: "compare-with-numerical", complete: state.taskState.comparisonViewed },
+      { id: "train-interior-teacher-only", complete: state.taskState.interiorTeacherTrainingCompleted },
+      { id: "train-load-patch-teacher-only", complete: state.taskState.loadPatchTeacherTrainingCompleted },
     ];
+    const baselineTasksComplete = taskChecks.slice(0, 3).every((task) => task.complete);
+    if (baselineTasksComplete && state.teacherLocked) {
+      unlockTeacherSupervision();
+    }
     const activeIndex = taskChecks.findIndex((task) => !task.complete);
     const allComplete = activeIndex === -1;
     const tasks = Object.fromEntries(

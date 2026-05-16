@@ -91,6 +91,11 @@ export function readFemControlValues(controls, fallback = DEFAULT_FEM_CONTROLS) 
 }
 
 export function readPinnControlValues(controls, fallback = DEFAULT_PINN_CONTROLS) {
+  const samplingStrategyControl = controls?.samplingStrategy;
+  const samplingStrategy = samplingStrategyControl?.type === "checkbox"
+    ? (samplingStrategyControl.checked ? "adaptive" : "uniform")
+    : readValue(samplingStrategyControl, fallback.samplingStrategy);
+
   return {
     geometry: readValue(controls?.geometry, fallback.geometry),
     frameThickness: readValue(controls?.frameThickness, fallback.frameThickness),
@@ -99,7 +104,7 @@ export function readPinnControlValues(controls, fallback = DEFAULT_PINN_CONTROLS
     patchWidth: readValue(controls?.patchWidth, fallback.patchWidth),
     young: readValue(controls?.young, fallback.young),
     poisson: readValue(controls?.poisson, fallback.poisson),
-    samplingStrategy: readValue(controls?.samplingStrategy, fallback.samplingStrategy),
+    samplingStrategy,
     nDomain: readValue(controls?.nDomain, fallback.nDomain),
     nBoundary: readValue(controls?.nBoundary, fallback.nBoundary),
     epochs: readValue(controls?.epochs, fallback.epochs),

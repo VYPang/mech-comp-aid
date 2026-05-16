@@ -99,7 +99,7 @@ export function renderPointCloudPlot(containerId, payload) {
   );
 }
 
-export function renderStressHeatmap(containerId, grid) {
+export function renderStressHeatmap(containerId, grid, colorRange = null) {
   Plotly.react(
     containerId,
     [
@@ -110,6 +110,8 @@ export function renderStressHeatmap(containerId, grid) {
         type: "heatmap",
         colorscale: "Turbo",
         colorbar: { title: "Stress" },
+        zmin: colorRange?.min,
+        zmax: colorRange?.max,
       },
     ],
     {
@@ -126,7 +128,7 @@ export function renderStressHeatmap(containerId, grid) {
   );
 }
 
-export function renderErrorHeatmap(containerId, grid) {
+export function renderErrorHeatmap(containerId, grid, colorRange = null) {
   Plotly.react(
     containerId,
     [
@@ -137,6 +139,8 @@ export function renderErrorHeatmap(containerId, grid) {
         type: "heatmap",
         colorscale: "Reds",
         colorbar: { title: "Abs. Error" },
+        zmin: colorRange?.min,
+        zmax: colorRange?.max,
       },
     ],
     {
