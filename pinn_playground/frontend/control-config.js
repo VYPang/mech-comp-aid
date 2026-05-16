@@ -49,6 +49,8 @@ const SHARED_STRUCTURAL_KEYS = [
   "braceHalfWidth",
   "patchCenter",
   "patchWidth",
+  "young",
+  "poisson",
 ];
 
 export function mergeControlValues(defaultValues, savedValues = null) {

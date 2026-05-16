@@ -57,7 +57,27 @@ export function createNumericalCell({ ui, runtimeState, shell }) {
     shell.setBottomPanelVisible(false);
     renderControls(checkpoint);
     updateNumericalTaskProgress();
-    if (!state.latestPreview) {
+    const currentConfig = getConfig();
+    const previewIsCurrent =
+      state.latestPreview
+      && configsMatch(runtimeState.fem?.latestPreviewConfig, currentConfig);
+    const solveIsCurrent =
+      state.latestSolve
+      && configsMatch(runtimeState.fem?.latestSolveConfig, currentConfig);
+
+    if (!previewIsCurrent) {
+      state.latestPreview = null;
+      if (runtimeState.fem) {
+        runtimeState.fem.latestPreview = null;
+        runtimeState.fem.latestPreviewConfig = null;
+      }
+    }
+
+    if (!solveIsCurrent && state.latestSolve) {
+      invalidateSolveResult();
+    }
+
+    if (!previewIsCurrent) {
       schedulePreview();
     } else {
       renderCurrentCheckpoint();
@@ -319,10 +339,12 @@ export function createNumericalCell({ ui, runtimeState, shell }) {
 
   async function fetchPreview() {
     try {
-      const payload = await fetchFemPreview(getConfig());
+      const config = getConfig();
+      const payload = await fetchFemPreview(config);
       state.isPreviewing = false;
       state.latestPreview = payload;
       runtimeState.fem.latestPreview = payload;
+      runtimeState.fem.latestPreviewConfig = config;
       runtimeState.checkpointEvents[`${NUMERICAL_CHECKPOINT_ID}:preview`] = {
         status: "success",
         caseId: payload.case_id,
@@ -602,4 +624,11 @@ function formatNumber(value) {
     return value.toExponential(3);
   }
   return value.toFixed(4);
+}
+
+function configsMatch(left, right) {
+  if (!left || !right) {
+    return false;
+  }
+  return JSON.stringify(left) === JSON.stringify(right);
 }
