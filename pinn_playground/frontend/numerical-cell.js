@@ -3,6 +3,10 @@ import { buildFemConfig, DEFAULT_FEM_CONTROLS, mergeControlValues, readFemContro
 import { buildNumericalGuideSections } from "./guide-content.js?v=checkpoint-shell-14";
 import { renderFemBoundaryPlot, renderFemDeformedPlot, renderFemMeshPlot, renderNotePlot, renderStressHeatmap } from "./plots.js?v=checkpoint-shell-14";
 
+const NUMERICAL_CHECKPOINT_ID = "numerical-session";
+const TARGET_MESH_CELLS = 80;
+const TARGET_YOUNG_MODULUS = 211000;
+
 export function createNumericalCell({ ui, runtimeState, shell }) {
   const state = {
     currentCheckpointId: null,
@@ -12,7 +16,19 @@ export function createNumericalCell({ ui, runtimeState, shell }) {
     isPreviewing: false,
     isSolving: false,
     controls: null,
+    taskState: createInitialTaskState(),
   };
+
+  function createInitialTaskState() {
+    return {
+      geometryTouched: false,
+      loadingPatchTouched: false,
+      meshTargetReached: false,
+      youngTargetReached: false,
+      solvedAtTargetCells: false,
+      solvedAtTargetYoung: false,
+    };
+  }
 
   function getMergedFemControls() {
     return mergeControlValues(DEFAULT_FEM_CONTROLS, runtimeState.fem?.savedControls);
@@ -36,6 +52,7 @@ export function createNumericalCell({ ui, runtimeState, shell }) {
     state.currentCheckpointId = checkpoint.id;
     shell.setBottomPanelVisible(false);
     renderControls(checkpoint);
+    updateNumericalTaskProgress();
     if (!state.latestPreview) {
       schedulePreview();
     } else {
@@ -53,11 +70,20 @@ export function createNumericalCell({ ui, runtimeState, shell }) {
     shell.setBottomPanelVisible(true);
   }
 
+  function reset() {
+    state.latestPreview = null;
+    state.latestSolve = null;
+    state.taskState = createInitialTaskState();
+    if (runtimeState.taskProgress) {
+      delete runtimeState.taskProgress[NUMERICAL_CHECKPOINT_ID];
+    }
+  }
+
   function renderControls(checkpoint) {
     const v = getMergedFemControls();
     ui.controlsForm.innerHTML = `
       <details class="toggle-panel" open>
-        <summary>Geometry and Mesh</summary>
+        <summary>Geometry</summary>
         <div class="control-section-grid mt-4 lg:grid-cols-2">
           <div class="control-card">
             <label for="fem-geometry" class="field-label">Geometry</label>
@@ -67,14 +93,6 @@ export function createNumericalCell({ ui, runtimeState, shell }) {
               <option value="x_brace" ${v.geometry === "x_brace" ? "selected" : ""}>X-Brace</option>
             </select>
             <p class="field-help">Pick the frame layout you want to inspect before solving.</p>
-          </div>
-          <div class="control-card">
-            <div class="range-row">
-              <label for="fem-n-cells">Structured Cells per Side</label>
-              <span id="fem-n-cells-value" class="range-value"></span>
-            </div>
-            <input id="fem-n-cells" type="range" min="12" max="80" step="2" value="${v.nCells}" class="field-range" />
-            <p class="field-help">More cells resolve corners and load transfer more clearly.</p>
           </div>
           <div class="control-card">
             <div class="range-row">
@@ -133,24 +151,26 @@ export function createNumericalCell({ ui, runtimeState, shell }) {
         </div>
       </details>
 
-      ${
-        checkpoint.id === "numerical-solve"
-          ? `
-            <details class="toggle-panel" open>
-              <summary>Run FEM Solve</summary>
-              <div class="mt-4 space-y-4">
-                <div class="control-card text-sm leading-6 text-slate-300">
-                  Use the current setup to solve one static plane-stress case and compare deformation against von Mises stress.
-                </div>
-                <button id="fem-solve-button" type="button" class="w-full rounded-xl bg-cyan-500 px-4 py-3 font-semibold text-slate-950 transition hover:bg-cyan-400">
-                  Run FEM Solve
-                </button>
-                <div id="fem-summary-table"></div>
-              </div>
-            </details>
-          `
-          : ""
-      }
+      <section class="control-card space-y-4">
+        <div>
+          <p class="text-xs font-semibold uppercase tracking-[0.22em] text-cyan-300">Run FEM Solve</p>
+          <p class="mt-2 text-sm leading-6 text-slate-300">
+            Use the current setup to solve one static plane-stress case and compare deformation against von Mises stress.
+          </p>
+        </div>
+        <div class="control-card">
+          <div class="range-row">
+            <label for="fem-n-cells">Structured Cells per Side</label>
+            <span id="fem-n-cells-value" class="range-value"></span>
+          </div>
+          <input id="fem-n-cells" type="range" min="12" max="80" step="2" value="${v.nCells}" class="field-range" />
+          <p class="field-help">More cells resolve corners and load transfer more clearly.</p>
+        </div>
+        <button id="fem-solve-button" type="button" class="w-full rounded-xl bg-cyan-500 px-4 py-3 font-semibold text-slate-950 transition hover:bg-cyan-400">
+          Run FEM Solve
+        </button>
+        <div id="fem-summary-table"></div>
+      </section>
     `;
 
     state.controls = {
@@ -174,22 +194,24 @@ export function createNumericalCell({ ui, runtimeState, shell }) {
     syncFemControlsToRuntime();
 
     [
-      state.controls.geometry,
-      state.controls.nCells,
-      state.controls.frameThickness,
-      state.controls.braceHalfWidth,
-      state.controls.patchCenter,
-      state.controls.patchWidth,
-      state.controls.young,
-      state.controls.poisson,
+      { control: state.controls.geometry, key: "geometry" },
+      { control: state.controls.nCells, key: "nCells" },
+      { control: state.controls.frameThickness, key: "frameThickness" },
+      { control: state.controls.braceHalfWidth, key: "braceHalfWidth" },
+      { control: state.controls.patchCenter, key: "patchCenter" },
+      { control: state.controls.patchWidth, key: "patchWidth" },
+      { control: state.controls.young, key: "young" },
+      { control: state.controls.poisson, key: "poisson" },
     ]
-      .filter(Boolean)
-      .forEach((control) => {
+      .filter(({ control }) => Boolean(control))
+      .forEach(({ control, key }) => {
         const eventName = control.tagName === "SELECT" ? "change" : "input";
         control.addEventListener(eventName, () => {
           updateValueLabels();
           syncFemControlsToRuntime();
+          recordTaskControlChange(key);
           invalidateSolveResult();
+          updateNumericalTaskProgress();
           schedulePreview();
         });
       });
@@ -217,6 +239,67 @@ export function createNumericalCell({ ui, runtimeState, shell }) {
     return syncFemControlsToRuntime();
   }
 
+  function recordTaskControlChange(key) {
+    if (key === "geometry") {
+      state.taskState.geometryTouched = true;
+    }
+    if (key === "patchCenter" || key === "patchWidth") {
+      state.taskState.loadingPatchTouched = true;
+    }
+    if (key === "nCells" && Number(state.controls?.nCells?.value) === TARGET_MESH_CELLS) {
+      state.taskState.meshTargetReached = true;
+    }
+    if (key === "young" && Number(state.controls?.young?.value) === TARGET_YOUNG_MODULUS) {
+      state.taskState.youngTargetReached = true;
+    }
+  }
+
+  function updateNumericalTaskProgress({ refresh = true } = {}) {
+    if (!runtimeState.taskProgress) {
+      runtimeState.taskProgress = {};
+    }
+    if (Number(state.controls?.nCells?.value) === TARGET_MESH_CELLS) {
+      state.taskState.meshTargetReached = true;
+    }
+    if (Number(state.controls?.young?.value) === TARGET_YOUNG_MODULUS) {
+      state.taskState.youngTargetReached = true;
+    }
+
+    const taskChecks = [
+      { id: "define-geometry", complete: state.taskState.geometryTouched },
+      { id: "define-loading-patch", complete: state.taskState.loadingPatchTouched },
+      { id: "set-mesh-density", complete: state.taskState.meshTargetReached },
+      { id: "run-baseline-result", complete: state.taskState.solvedAtTargetCells },
+      { id: "change-young-run-result", complete: state.taskState.solvedAtTargetYoung },
+    ];
+    const activeIndex = taskChecks.findIndex((task) => !task.complete);
+    const allComplete = activeIndex === -1;
+    const tasks = Object.fromEntries(
+      taskChecks.map((task, index) => [
+        task.id,
+        {
+          completed: allComplete || index < activeIndex,
+          status: allComplete || index < activeIndex
+            ? "completed"
+            : index === activeIndex
+              ? "active"
+              : "locked",
+        },
+      ]),
+    );
+
+    runtimeState.taskProgress[NUMERICAL_CHECKPOINT_ID] = {
+      allComplete,
+      activeTaskId: allComplete ? null : taskChecks[activeIndex].id,
+      tasks,
+      updatedAt: new Date().toISOString(),
+    };
+
+    if (refresh) {
+      shell.refreshProgress();
+    }
+  }
+
   function schedulePreview() {
     state.isPreviewing = true;
     shell.setStatus("Refreshing numerical preview", {
@@ -236,7 +319,7 @@ export function createNumericalCell({ ui, runtimeState, shell }) {
       state.isPreviewing = false;
       state.latestPreview = payload;
       runtimeState.fem.latestPreview = payload;
-      runtimeState.checkpointEvents["numerical-preview"] = {
+      runtimeState.checkpointEvents[`${NUMERICAL_CHECKPOINT_ID}:preview`] = {
         status: "success",
         caseId: payload.case_id,
       };
@@ -293,10 +376,20 @@ export function createNumericalCell({ ui, runtimeState, shell }) {
     ]);
 
     try {
-      const payload = await fetchFemSolve(getConfig());
+      const config = getConfig();
+      const payload = await fetchFemSolve(config);
       state.latestSolve = payload;
       runtimeState.fem.latestSolve = payload;
-      runtimeState.checkpointEvents["numerical-solve"] = {
+      runtimeState.fem.latestSolveConfig = config;
+      if (Number(config.mesh.n_cells) === TARGET_MESH_CELLS) {
+        state.taskState.solvedAtTargetCells = true;
+      }
+      if (Number(config.material.young) === TARGET_YOUNG_MODULUS) {
+        state.taskState.youngTargetReached = true;
+        state.taskState.solvedAtTargetYoung = true;
+      }
+      updateNumericalTaskProgress({ refresh: false });
+      runtimeState.checkpointEvents[NUMERICAL_CHECKPOINT_ID] = {
         status: "success",
         caseId: payload.case_id,
         maxVonMises: payload.summary.max_von_mises,
@@ -310,7 +403,7 @@ export function createNumericalCell({ ui, runtimeState, shell }) {
       });
       updateGuide();
     } catch (error) {
-      runtimeState.checkpointEvents["numerical-solve"] = {
+      runtimeState.checkpointEvents[NUMERICAL_CHECKPOINT_ID] = {
         status: "error",
         message: String(error),
       };
@@ -336,15 +429,11 @@ export function createNumericalCell({ ui, runtimeState, shell }) {
   }
 
   function renderCurrentCheckpoint() {
-    if (state.currentCheckpointId === "numerical-preview") {
-      renderPreviewCheckpoint();
-      return;
-    }
-    if (state.currentCheckpointId === "numerical-solve") {
-      renderSolveCheckpoint();
-      return;
-    }
-    renderInspectCheckpoint();
+    renderNumericalWorkspace();
+  }
+
+  function renderNumericalWorkspace() {
+    renderSolveCheckpoint();
   }
 
   function renderPreviewCheckpoint() {
@@ -388,10 +477,11 @@ export function createNumericalCell({ ui, runtimeState, shell }) {
         rightTitle: "Von Mises Stress",
         rightSummary: `Max ${formatNumber(state.latestSolve.summary.max_von_mises)}`,
       });
+      shell.setControlsSummary("The latest FEM solve is on screen. Change one setting and rerun to compare cause and effect.");
       return;
     }
 
-    const solveIsStale = runtimeState.checkpointEvents["numerical-solve"]?.status === "stale";
+    const solveIsStale = runtimeState.checkpointEvents[NUMERICAL_CHECKPOINT_ID]?.status === "stale";
     if (state.latestPreview) {
       renderFemMeshPlot(ui.leftPlot, state.latestPreview);
       renderFemBoundaryPlot(ui.rightPlot, state.latestPreview);
@@ -445,8 +535,9 @@ export function createNumericalCell({ ui, runtimeState, shell }) {
   function invalidateSolveResult() {
     state.latestSolve = null;
     runtimeState.fem.latestSolve = null;
-    if (runtimeState.checkpointEvents["numerical-solve"]?.status === "success") {
-      runtimeState.checkpointEvents["numerical-solve"] = {
+    runtimeState.fem.latestSolveConfig = null;
+    if (runtimeState.checkpointEvents[NUMERICAL_CHECKPOINT_ID]?.status === "success") {
+      runtimeState.checkpointEvents[NUMERICAL_CHECKPOINT_ID] = {
         status: "stale",
       };
       shell.refreshProgress();
@@ -466,7 +557,7 @@ export function createNumericalCell({ ui, runtimeState, shell }) {
       controls: readFemControlValues(state.controls, getMergedFemControls()),
       latestSolve: state.latestSolve,
       currentCheckpointId: state.currentCheckpointId,
-      solveStatus: runtimeState.checkpointEvents["numerical-solve"]?.status,
+      solveStatus: runtimeState.checkpointEvents[NUMERICAL_CHECKPOINT_ID]?.status,
     }));
   }
 
@@ -495,6 +586,7 @@ export function createNumericalCell({ ui, runtimeState, shell }) {
   return {
     enter,
     leave,
+    reset,
   };
 }
 

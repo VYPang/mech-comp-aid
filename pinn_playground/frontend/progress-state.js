@@ -1,52 +1,46 @@
-const STORAGE_KEY = "pinn-playground-checkpoint-shell-v1";
+const STORAGE_KEY = "pinn-playground-checkpoint-shell-v2";
 
 export const checkpointGroups = [
   {
     id: "numerical",
     title: "Numerical Cell",
-    description: "Read the load path, solve once, and carry that baseline into the PINN.",
+    description: "Work through one guided FEM session, then carry that baseline into the PINN.",
     checkpoints: [
       {
-        id: "numerical-preview",
+        id: "numerical-session",
         cellId: "numerical",
-        title: "Preview Mesh and Loading",
-        subtitle: "Check the mesh, bottom support, and top load patch.",
-        controlsTitle: "Numerical Setup",
-        controlsSubtitle: "Change geometry, mesh density, and load patch. The preview updates automatically.",
-        requirements: [
-          "Pick a frame or brace layout.",
-          "Confirm the support and load patch are where you expect.",
-          "Continue when the setup looks right.",
+        title: "Numerical Task Session",
+        subtitle: "Define one FEM case, tune the mesh, solve it, then perturb material stiffness and solve again.",
+        controlsTitle: "Numerical Workspace",
+        controlsSubtitle: "Use one workspace for geometry, mesh preview, FEM solving, and reflection.",
+        tasks: [
+          {
+            id: "define-geometry",
+            title: "Pick geometry",
+            question: "Which frame layout would you like to use?",
+          },
+          {
+            id: "define-loading-patch",
+            title: "Define loading position and width",
+            question: "How do load position and width affect where force enters the frame?",
+          },
+          {
+            id: "set-mesh-density",
+            title: "Set Structured Cells per Side to 80",
+            question: "What is affected in the plot when you change the mesh density?",
+          },
+          {
+            id: "run-baseline-result",
+            title: "Run the FEM",
+            question: "After the solve, do the largest deformation and stress regions appear in the same place?",
+          },
+          {
+            id: "change-young-run-result",
+            title: "Change Young's Modulus to 211000 and run again",
+            question: "What changes do you observe in the deformation and stress patterns?",
+          },
         ],
-        completeMode: "manual",
-      },
-      {
-        id: "numerical-solve",
-        cellId: "numerical",
-        title: "Run FEM Solve",
-        subtitle: "Solve the current case and inspect deformation plus von Mises stress.",
-        controlsTitle: "Numerical Solve",
-        controlsSubtitle: "Keep the same setup, then run one static FEM solve from this checkpoint.",
-        requirements: [
-          "Check the current mesh and load patch.",
-          "Run the FEM solve once.",
-          "The next step unlocks automatically after a successful solve.",
-        ],
-        completeMode: "api_success",
-      },
-      {
-        id: "numerical-inspect",
-        cellId: "numerical",
-        title: "Inspect Numerical Result",
-        subtitle: "Review deformation scale, stress response, and the solver summary.",
-        controlsTitle: "Numerical Reflection",
-        controlsSubtitle: "Keep the latest FEM result on screen and decide what it teaches you.",
-        requirements: [
-          "Inspect the latest deformation and stress field.",
-          "Use this result as the trust baseline for later PINN comparison.",
-          "Continue when the baseline feels clear.",
-        ],
-        completeMode: "manual",
+        completeMode: "task_list",
       },
     ],
   },
@@ -62,6 +56,7 @@ export const checkpointGroups = [
         subtitle: "From numerical methods to physics-informed deep learning, with seven interactive figures.",
         controlsTitle: "Tutorial Sections",
         controlsSubtitle: "Jump to any section, then mark complete when you have read through the figures.",
+        tasks: [],
         requirements: [
           "Read each tutorial section.",
           "Try the interactive figure controls.",
@@ -76,6 +71,7 @@ export const checkpointGroups = [
         subtitle: "Explore geometry, sampling, and point density before training.",
         controlsTitle: "PINN Preview Controls",
         controlsSubtitle: "Configure geometry and collocation first. Training controls appear in the next step.",
+        tasks: [],
         requirements: [
           "Adjust geometry and sampling.",
           "Inspect the collocation cloud.",
@@ -90,6 +86,7 @@ export const checkpointGroups = [
         subtitle: "Run training and inspect the live loss and stress plots.",
         controlsTitle: "PINN Training Controls",
         controlsSubtitle: "Use the existing live training workflow inside this checkpoint.",
+        tasks: [],
         requirements: [
           "Start or stop training as needed.",
           "Watch the stress map and loss curves update in place.",
@@ -104,6 +101,7 @@ export const checkpointGroups = [
         subtitle: "Train with sparse FEM displacement labels to lift the stress magnitude ceiling.",
         controlsTitle: "Teacher-Guided Training",
         controlsSubtitle: "Pick how many FEM displacement samples are injected per region, then retrain from scratch.",
+        tasks: [],
         requirements: [
           "Choose how many teacher points land in the interior, on the free boundary, and on the load patch.",
           "Start a guided training run and watch the teacher loss trace.",

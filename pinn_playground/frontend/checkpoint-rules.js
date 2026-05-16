@@ -2,6 +2,7 @@ export const COMPLETE_MODES = {
   MANUAL: "manual",
   API_SUCCESS: "api_success",
   RULE: "rule",
+  TASK_LIST: "task_list",
 };
 
 export function canAdvanceCheckpoint(checkpoint, progressState, runtimeState) {
@@ -17,6 +18,8 @@ export function canAdvanceCheckpoint(checkpoint, progressState, runtimeState) {
       return runtimeState.checkpointEvents[checkpoint.id]?.status === "success";
     case COMPLETE_MODES.RULE:
       return evaluateCheckpointRules(checkpoint, runtimeState);
+    case COMPLETE_MODES.TASK_LIST:
+      return Boolean(runtimeState.taskProgress?.[checkpoint.id]?.allComplete);
     default:
       return false;
   }
@@ -32,9 +35,32 @@ export function getCompletionMessage(checkpoint, runtimeState) {
         : "Run the required solve to unlock the next step.";
     case COMPLETE_MODES.RULE:
       return "This checkpoint will use rule-based completion in a later milestone.";
+    case COMPLETE_MODES.TASK_LIST:
+      return getTaskListCompletionMessage(checkpoint, runtimeState);
     default:
       return "Completion state is unavailable.";
   }
+}
+
+function getTaskListCompletionMessage(checkpoint, runtimeState) {
+  const tasks = Array.isArray(checkpoint.tasks) ? checkpoint.tasks : [];
+  if (!tasks.length) {
+    return "No tasks are configured for this checkpoint yet.";
+  }
+
+  const taskProgress = runtimeState.taskProgress?.[checkpoint.id];
+  if (taskProgress?.allComplete) {
+    return "All tasks are complete. You can continue.";
+  }
+
+  const activeTaskId = taskProgress?.activeTaskId ?? tasks[0]?.id;
+  const activeIndex = Math.max(0, tasks.findIndex((task) => task.id === activeTaskId));
+  const activeTask = tasks[activeIndex];
+  if (!activeTask) {
+    return "Start the task list to unlock the next checkpoint.";
+  }
+
+  return `Task ${activeIndex + 1} of ${tasks.length}: ${activeTask.title}.`;
 }
 
 export function evaluateCheckpointRules(checkpoint, runtimeState) {

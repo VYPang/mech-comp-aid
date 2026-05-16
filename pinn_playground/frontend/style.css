@@ -310,6 +310,131 @@ body {
   line-height: 1;
 }
 
+.task-item {
+  display: flex;
+  gap: 0.7rem;
+  align-items: flex-start;
+  border-radius: 0.85rem;
+  border: 1px solid rgb(51 65 85);
+  background: rgb(15 23 42 / 0.55);
+  padding: 0.8rem;
+}
+
+.task-item-active {
+  border-color: rgb(34 211 238 / 0.7);
+  background: rgb(8 47 73 / 0.42);
+}
+
+.task-item-completed {
+  border-color: rgb(45 212 191 / 0.42);
+  background: rgb(20 83 45 / 0.2);
+}
+
+.task-item-locked {
+  opacity: 0.58;
+}
+
+.task-marker {
+  display: inline-flex;
+  height: 1.45rem;
+  width: 1.45rem;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  border: 1px solid rgb(71 85 105);
+  color: rgb(203 213 225);
+  font-size: 0.76rem;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.task-item-active .task-marker {
+  border-color: rgb(34 211 238 / 0.75);
+  color: rgb(165 243 252);
+}
+
+.task-item-completed .task-marker {
+  border-color: rgb(45 212 191 / 0.55);
+  color: rgb(153 246 228);
+}
+
+.task-body {
+  display: grid;
+  min-width: 0;
+  gap: 0.45rem;
+  flex: 1 1 auto;
+}
+
+.task-title-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.55rem;
+}
+
+.task-title {
+  color: rgb(241 245 249);
+  font-size: 0.9rem;
+  font-weight: 650;
+  line-height: 1.35;
+}
+
+.task-question {
+  color: rgb(148 163 184);
+  font-size: 0.8rem;
+  line-height: 1.5;
+}
+
+.task-status {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  border: 1px solid rgb(71 85 105);
+  padding: 0.1rem 0.45rem;
+  font-size: 0.65rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.task-status-active {
+  border-color: rgb(34 211 238 / 0.5);
+  color: rgb(165 243 252);
+}
+
+.task-status-completed {
+  border-color: rgb(45 212 191 / 0.45);
+  color: rgb(153 246 228);
+}
+
+.task-status-locked {
+  color: rgb(148 163 184);
+}
+
+.task-empty-state {
+  display: grid;
+  gap: 0.35rem;
+  border-radius: 0.85rem;
+  border: 1px dashed rgb(71 85 105);
+  background: rgb(15 23 42 / 0.35);
+  padding: 0.85rem;
+}
+
+.task-empty-title {
+  color: rgb(226 232 240);
+  font-weight: 650;
+}
+
+.task-empty-copy {
+  color: rgb(148 163 184);
+  font-size: 0.82rem;
+  line-height: 1.5;
+}
+
 .checkpoint-placeholder {
   border-radius: 1rem;
   border: 1px dashed rgb(71 85 105);

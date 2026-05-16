@@ -34,7 +34,14 @@ export function buildNumericalGuideSections({ controls, latestSolve, currentChec
     tryNext.push("Run the FEM solve again so the result matches the current preview.");
   }
 
-  if (currentCheckpointId === "numerical-preview") {
+  if (currentCheckpointId === "numerical-session") {
+    if (latestSolve) {
+      tryNext.push("Change one setting at a time, rerun the solve, and compare the field response.");
+    } else {
+      tryNext.push("Finish the active task, then run the FEM solve from the same workspace.");
+    }
+    why.push("This single session ties setup, solving, and reflection into one cause-and-effect loop.");
+  } else if (currentCheckpointId === "numerical-preview") {
     why.push("This step is about reading support and load placement before asking the solver for numbers.");
   } else if (currentCheckpointId === "numerical-solve") {
     tryNext.push("Solve once, then compare the deformed shape against the stress hot spots.");

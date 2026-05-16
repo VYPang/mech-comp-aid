@@ -8,6 +8,7 @@ import { initializeShellPlots } from "./plots.js?v=checkpoint-shell-14";
 export function createAppShell({ ui, progressStore }) {
   const runtimeState = {
     checkpointEvents: {},
+    taskProgress: {},
     fem: {},
     pinn: {},
   };
@@ -98,7 +99,9 @@ export function createAppShell({ ui, progressStore }) {
       }
     }
     mountedCheckpointId = null;
+    Object.values(cells).forEach((cell) => cell.reset?.());
     runtimeState.checkpointEvents = {};
+    runtimeState.taskProgress = {};
     runtimeState.fem = {};
     runtimeState.pinn = {};
     progressStore.reset();
@@ -251,15 +254,38 @@ export function createAppShell({ ui, progressStore }) {
   }
 
   function renderCoachPanel(checkpoint) {
-    ui.requirementsList.innerHTML = checkpoint.requirements
-      .map(
-        (requirement, index) => `
-          <li class="requirement-item">
-            <span class="requirement-marker">${index + 1}</span>
-            <span>${requirement}</span>
+    if (ui.guideBox) {
+      ui.guideBox.style.display = checkpoint.cellId === "pinnTutorial" ? "" : "none";
+    }
+
+    const tasks = Array.isArray(checkpoint.tasks) ? checkpoint.tasks : [];
+    if (!tasks.length) {
+      ui.requirementsList.innerHTML = `
+        <li class="task-empty-state">
+          <span class="task-empty-title">No task list yet</span>
+          <span class="task-empty-copy">This cell will receive its guided tasks in a later pass.</span>
+        </li>
+      `;
+      return;
+    }
+
+    const taskProgress = runtimeState.taskProgress?.[checkpoint.id];
+    ui.requirementsList.innerHTML = tasks
+      .map((task, index) => {
+        const status = taskProgress?.tasks?.[task.id]?.status ?? (index === 0 ? "active" : "locked");
+        return `
+          <li class="task-item task-item-${status}">
+            <span class="task-marker">${index + 1}</span>
+            <span class="task-body">
+              <span class="task-title-row">
+                <span class="task-title">${task.title}</span>
+                <span class="task-status task-status-${status}">${taskStatusLabel(status)}</span>
+              </span>
+              <span class="task-question">${task.question}</span>
+            </span>
           </li>
-        `,
-      )
+        `;
+      })
       .join("");
   }
 
@@ -274,11 +300,24 @@ export function createAppShell({ ui, progressStore }) {
     ui.nextStepButton.textContent =
       isCompleted && isFinal
         ? "Learning path completed"
+        : !canAdvance && checkpoint.completeMode === "task_list"
+          ? "Finish the task list first"
         : !canAdvance && checkpoint.completeMode === "api_success"
           ? "Complete the required run first"
         : isFinal
           ? "Mark learning path complete"
           : "Mark complete and continue";
+  }
+}
+
+function taskStatusLabel(status) {
+  switch (status) {
+    case "completed":
+      return "Done";
+    case "active":
+      return "Now";
+    default:
+      return "Locked";
   }
 }
 
