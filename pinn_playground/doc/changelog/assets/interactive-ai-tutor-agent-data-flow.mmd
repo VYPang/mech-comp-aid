@@ -1,0 +1,42 @@
+%%{init: {'theme': 'neutral', 'flowchart': {'nodeSpacing': 28, 'rankSpacing': 50}, 'themeVariables': {'fontSize': '24px'}}}%%
+flowchart TB
+    student[Student asks in Tutor panel] --> send[Frontend send]
+
+    subgraph FE1[1. Frontend request assembly]
+        direction TB
+        send --> pack[packAppState]
+        pack --> state[Fresh app state:<br/>checkpoint, task, controls,<br/>options, metrics, tutorial page]
+        state --> req[TutorChatRequest]
+    end
+
+    req --> api[POST /api/tutor/chat]
+
+    subgraph BE[2. Backend tutor harness]
+        direction TB
+        api --> retrieve[Bounded retrieval: presets + lessons]
+        req --> prompt[Prompt assembly]
+        retrieve --> prompt
+        prompt --> model[Call local Qwen]
+        model --> parse[Parse model JSON]
+        parse --> valid{Valid JSON?}
+        valid -- no --> repair[One repair retry]
+        repair --> parse
+        valid -- yes --> validate[Policy validation]
+        validate --> resp[TutorChatResponse]
+    end
+
+    resp --> render[Frontend renders reply]
+    render --> hasSuggestion{Suggestion card present?}
+    hasSuggestion -- no --> explain[Show explanatory answer only]
+    hasSuggestion -- yes --> review[Show current and proposed values]
+    review --> approve{User clicks Apply changes?}
+    approve -- no --> keep[Keep suggestion reviewable or dismiss it]
+
+    subgraph FE2[3. Frontend controlled apply path]
+        direction TB
+        approve -- yes --> apply[applySuggestion]
+        apply --> setValue[setControlValue per accepted control]
+        setValue --> events[Dispatch input and change events]
+        events --> cell[Existing cell logic updates preview, training, and shared state]
+        cell --> highlight[Highlight stays visible while values still match]
+    end

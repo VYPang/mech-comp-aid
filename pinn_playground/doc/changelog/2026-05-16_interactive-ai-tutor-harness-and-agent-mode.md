@@ -207,62 +207,13 @@ The apply path maps camelCase control keys to DOM ids, handles PINN and FEM pref
 
 ## Structured Agent-Mode Data Flow
 
-The following flow chart summarizes how the Agent receives structured state and how its structured output becomes a user-approved UI update.
+In Agent mode, the request path still begins with the same frontend send cycle used by Ask mode. When the student submits a message, the tutor does not rely on stale chat context alone. Instead, `send()` calls `packAppState()` and captures a fresh structured snapshot of the current checkpoint, active task, live control values, exact dropdown option values, compact metric summaries, and the visible tutorial section when the tutorial cell is active. That snapshot becomes the `TutorChatRequest` sent to `/api/tutor/chat`. On the backend, the request is combined with only a small amount of bounded server-side context: checkpoint-matched presets from `tutor_recommendations.json` and relevant lesson excerpts from `tutor_lesson_excerpts.json`. The backend then assembles the prompt and calls the local model, so the model reasons over an explicit compressed state description rather than raw DOM access or unbounded project context.
 
-```mermaid
-flowchart TD
-    A[Student asks a question in Tutor panel] --> B[Frontend send function]
-    B --> C[packAppState]
-    C --> C1[Read active checkpoint and task]
-    C --> C2[Read current controls]
-    C --> C3[Read select option values]
-    C --> C4[Attach metrics and comparison summaries]
-    C --> C5[Attach visible tutorial page if active]
+The return path is where Agent mode becomes intentionally stricter than a normal chat assistant. The backend first parses the model output as JSON, retries once if the model returns malformed JSON, and then validates the parsed object against application policy. In Ask mode, any suggestion is dropped. In Agent mode, only known control keys are allowed to survive, select values must match the live option list or a known alias, and warnings are attached when fields are filtered out. The frontend then renders the validated reply as a review card. No state changes happen at that point. Only after the student clicks **Apply changes** does `applySuggestion()` iterate over the approved controls, call `setControlValue()` for each one, dispatch ordinary `input` and `change` events, and let the existing cell logic react exactly as if the student had edited those controls manually. The highlight layer is applied after that and remains visible only while the live control values still match the applied suggestion. In other words, the model can propose a structured change, but it never bypasses backend validation, user approval, or the normal UI event path.
 
-    C1 --> D[TutorChatRequest JSON]
-    C2 --> D
-    C3 --> D
-    C4 --> D
-    C5 --> D
+The following diagram summarizes that request-and-apply loop. The Mermaid source used to generate it is stored in [assets/interactive-ai-tutor-agent-data-flow.mmd](assets/interactive-ai-tutor-agent-data-flow.mmd).
 
-    D --> E[POST /api/tutor/chat]
-    E --> F[Backend retrieval broker]
-    F --> F1[Select checkpoint presets]
-    F --> F2[Select lesson excerpts]
-    F1 --> G[Prompt assembly]
-    F2 --> G
-    D --> G
-
-    G --> H[Local Qwen via OpenAI-compatible endpoint]
-    H --> I[Raw model text]
-    I --> J[JSON parser]
-    J --> K{Valid JSON?}
-    K -- No --> L[One JSON repair retry]
-    L --> J
-    K -- Yes --> M[Response validator]
-
-    M --> M1[Drop suggestions in Ask mode]
-    M --> M2[Filter unknown control keys]
-    M --> M3[Canonicalize select values]
-    M --> M4[Return warnings for filtered fields]
-    M1 --> N[TutorChatResponse]
-    M2 --> N
-    M3 --> N
-    M4 --> N
-
-    N --> O[Frontend renders answer]
-    O --> P{Suggestion present?}
-    P -- No --> Q[Explanatory chat turn only]
-    P -- Yes --> R[Show proposed controls table]
-    R --> S{User clicks Apply changes?}
-    S -- No --> T[Suggestion remains reviewable or dismissed]
-    S -- Yes --> U[applySuggestion]
-    U --> V[setControlValue]
-    V --> W[Dispatch input/change events]
-    W --> X[Existing cell logic updates preview/training state]
-    X --> Y[Applied controls are persistently highlighted]
-    Y --> Z[Highlight clears for each control after user changes it]
-```
+![Structured Agent-mode data flow](assets/interactive-ai-tutor-agent-data-flow.png)
 
 The important design feature is that the model does not directly mutate application state. It returns a structured proposal. The backend validates that proposal. The frontend presents it. The user approves it. The existing control event system then performs the actual state transition.
 
