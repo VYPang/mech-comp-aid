@@ -36,9 +36,9 @@ export const TUTORIAL_SECTIONS = [
     figureFactory: createQuadraticFigure,
     body: String.raw`
       <p>Before discussing machine learning, it is useful to begin with a familiar algebra problem.</p>
-      <p>Suppose we believe that a relationship between input <code>x</code> and output <code>y</code> is exactly described by a quadratic function:</p>
+      <p>Given that input <code>x</code> and output <code>y</code> is described by a quadratic function:</p>
       <p class="lesson-eq">$$y = ax^2 + bx + c$$</p>
-      <p>The model form is already chosen. The only unknowns are the three parameters <code>a</code>, <code>b</code>, <code>c</code>. If we are given three points that lie exactly on the curve, each point gives one equation, and the resulting 3×3 linear system usually has a unique solution.</p>
+      <p>We call the quadratic function with unknown parameters, <code>a</code>, <code>b</code>, and <code>c</code>, as a <strong>model</strong>. Since there are three unknown parameters, we need three equations to solve for them. Each point <code>(xᵢ, yᵢ)</code> gives one equation. This would result in a 3×3 linear system providing unique solution for unknown parameters, if the points are not collinear resulting in non-invertible matrix.</p>
       <p>The figure below makes this concrete: drag the three points and watch the matrix system rebuild and re-solve in real time. After solving, we have the complete function and can predict the output at a new input.</p>
       <p>This is the first important idea: <strong>a model is a function form with unknown parameters</strong>. In this quadratic example the model form is simple and the number of data points exactly matches the number of unknowns. The solution is clean because the data are assumed to be exact. Real engineering data are rarely this clean.</p>
     `,
