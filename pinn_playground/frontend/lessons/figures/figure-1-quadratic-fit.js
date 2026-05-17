@@ -12,7 +12,7 @@ import {
 
 export function createQuadraticFigure(container) {
   const { body, captionEl } = buildFigureShell(container, {
-    title: "Figure 1 - Three exact points pin one quadratic curve",
+    title: "Figure 1 - Retrieve Model Parameter through Given Three Points",
     caption: "Drag any of the three points. The matrix system is rebuilt and re-solved on every frame.",
   });
 
@@ -178,7 +178,7 @@ export function createQuadraticFigure(container) {
           </div>
         </div>
       </div>
-      <p class="lesson-figure-hint">Three equations, three unknowns. The drawing math never touches pixels — pixel mapping happens once in <code>mapToCanvas</code>.</p>
+      <p class="lesson-figure-hint">Three equations, three unknowns.</p>
     `;
   }
 

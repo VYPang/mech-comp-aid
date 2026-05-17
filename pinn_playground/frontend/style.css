@@ -648,6 +648,63 @@ body {
 .lesson-eq .katex {
   font-size: 1.02em;
 }
+.lesson-static-figure-row {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.85rem;
+  margin: 0.95rem 0 1.05rem;
+}
+.lesson-static-panel {
+  margin: 0;
+  padding: 0.7rem;
+  background: rgb(2 6 23 / 0.5);
+  border: 1px solid rgb(51 65 85);
+  border-radius: 0.5rem;
+}
+.lesson-static-panel svg {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+.lesson-static-panel figcaption {
+  margin-top: 0.55rem;
+  color: rgb(203 213 225);
+  font-size: 0.82rem;
+  line-height: 1.5;
+}
+.lesson-static-bg { fill: rgb(15 23 42 / 0.62); }
+.lesson-static-axis {
+  fill: none;
+  stroke: rgb(71 85 105);
+  stroke-width: 1.4;
+}
+.lesson-static-truth {
+  fill: none;
+  stroke: rgb(34 211 238);
+  stroke-width: 2.6;
+  stroke-dasharray: 7 5;
+  stroke-linecap: round;
+}
+.lesson-static-fit {
+  fill: none;
+  stroke-width: 3;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.lesson-static-fit-under { stroke: rgb(248 113 113); }
+.lesson-static-fit-over { stroke: rgb(251 146 60); }
+.lesson-static-points circle {
+  fill: rgb(253 224 71);
+  stroke: rgb(113 63 18);
+  stroke-width: 1.2;
+}
+.lesson-static-legend text {
+  fill: rgb(203 213 225);
+  font-size: 11px;
+}
+@media (max-width: 760px) {
+  .lesson-static-figure-row { grid-template-columns: minmax(0, 1fr); }
+}
 .lesson-figure {
   margin-top: 1rem;
   background: rgb(2 6 23 / 0.55);

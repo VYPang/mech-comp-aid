@@ -28,7 +28,7 @@ $$
 y = ax^2 + bx + c
 $$
 
-The model form is already chosen. The only unknowns are the three parameters:
+In this example, the quadratic is the chosen model: a mathematical representation of the relationship between input `x` and output `y`. The only unknowns are the three model parameters:
 
 $$
 a, \quad b, \quad c.
@@ -77,11 +77,9 @@ $$
 
 If the three points have distinct `x` values, this system usually has one unique solution. After solving the system, we have the complete function. We can then predict the output at a new input, such as `x = 0.7`, by substituting it into the fitted quadratic.
 
-This is the first important idea: **a model is a function form with unknown parameters**.
+This is the first important idea: in engineering, we choose a model to describe the trend of sampled data or the response of a system. A quadratic is only one simple model family; depending on the application, engineers may also use exponential, logarithmic, or many other model forms.
 
-In this quadratic example, the model form is simple and the number of data points exactly matches the number of unknown parameters. The solution is clean because the data are assumed to be exact.
-
-Real engineering data are rarely this clean.
+In this exact example, the number of data points exactly matches the number of unknown parameters, so the solution is clean. Real engineering data are rarely this clean, which leads naturally to modeling and curve fitting.
 
 ### Interactive Figure Placeholder 1 - Exact Quadratic Parameter Recovery
 
@@ -111,49 +109,31 @@ Real engineering data are rarely this clean.
 
 The previous example was exact. Three points gave three equations, and the quadratic was forced to pass through every point.
 
-Now consider a more realistic case. Suppose five points are collected from an experiment. The true relationship is close to a third-degree polynomial, but every measurement contains noise:
+Engineering sampling is usually different. Data may come from strain gauges, displacement sensors, pressure measurements, temperature logs, or numerical sampling, and those samples often contain noise from sensors, material variability, imperfect loading, discretization error, or limited measurement resolution.
+
+That changes the objective. We are no longer trying to force one curve through every sampled point. Instead, we want a model that captures the underlying trend of the data. This is different from Chapter 1 in practice, but it is fundamentally the same kind of problem: we still choose a model family and compute the parameter values that best describe the observed data.
+
+In this section the model family is still polynomial, but now we can vary its degree. A low-degree polynomial may be too rigid to capture turns or extrema in the sample set. That is **underfitting**. A very high-degree polynomial may bend enough to pass close to every noisy point, but then it starts picking up random sampling noise instead of the real trend. That is **overfitting**. These two ideas are counterintuitive at first. A model can be bad because it is too simple, but it can also be bad because it is too flexible. In engineering practice, the goal is usually to visualize the data trend, try several plausible model choices, and then judge which model generalizes best rather than which one hugs the current sample most aggressively.
+
+At this point in the frontend tutorial, show a fixed two-panel comparison. The left panel shows underfitting: noisy sample points scatter around the true curved trend, but a rigid low-degree fit misses the curvature. The right panel shows overfitting: the same noisy samples and true trend are shown, but a highly flexible fit wiggles toward the noisy points and can move away from the true trend between samples.
+
+That is why engineers use a **testing set** or other held-out data. The training data are used to compute the model parameters. The testing data are not used in that computation; they are kept separate so we can check whether the fitted model also performs well on unseen samples. In the interactive figure below you can compare against the hidden ground-truth curve directly. In later machine-learning settings, this same idea appears as explicit training and testing data.
+
+Once we choose a model family, parameter computation becomes an optimization problem. We search for the coefficients that minimize the mean squared error over the sampled points:
 
 $$
-y = p_3x^3 + p_2x^2 + p_1x + p_0 + \text{noise}.
+L = \frac{1}{N}\sum_{i=1}^{N} \left(\hat{y}_i - y_i\right)^2.
 $$
 
-Because of noise, the points may not lie perfectly on any simple curve. If we force a curve to pass through all of them, we may fit the measurement errors rather than the real trend.
+For each sampled input `x_i`, the model produces a prediction $\hat{y}_i$. We compare that prediction with the measured value `y_i`, square the error, and average over all samples. The best-fit parameters are the ones that make this average error as small as possible.
 
-This is where the idea of **modeling** becomes important.
+Use the figure to test these ideas. Increase the polynomial degree and watch when the model begins to capture bends that a simpler curve misses. Then push the degree too high and see how the curve starts chasing noisy points. Next increase the sample count and observe that with more data, a somewhat more flexible model can sometimes be supported more reliably because the overall trend is revealed more clearly.
 
-A model is not the physical world itself. A model is a chosen mathematical representation of the physical world. When we choose a linear model, a quadratic model, or a polynomial model, we are deciding what kind of relationship we are willing to represent.
+The main lesson is not that there is one golden rule for choosing degree. There is not. Real datasets contain randomness, so model selection is partly an engineering judgment informed by plots, testing performance, and domain knowledge. Understanding underfitting, overfitting, and held-out evaluation is more important than memorizing one specific fitting formula.
 
-For example, we might choose:
+This is the second important idea: **model fitting is parameter selection under uncertainty, guided by error measures and checked on data that were not used for fitting**.
 
-$$
-y = w_1x + w_0
-$$
-
-or:
-
-$$
-y = w_2x^2 + w_1x + w_0
-$$
-
-or:
-
-$$
-y = w_5x^5 + w_4x^4 + w_3x^3 + w_2x^2 + w_1x + w_0.
-$$
-
-Each model has a different number of parameters. A higher-degree polynomial can bend more, so it has more capacity. However, more capacity is not automatically better.
-
-When the data contain noise, we usually do not ask for a curve that passes through every point. Instead, we ask for the curve that best fits the data according to an error measure.
-
-One common choice is the mean squared error:
-
-$$
-L = \frac{1}{N}\sum_{i=1}^{N} \left(y_{model}(x_i) - y_i\right)^2.
-$$
-
-Here, `L` is the loss. It measures how far the model prediction is from the observed data. Finding a best-fit curve means finding the parameters that make this loss as small as possible.
-
-This is the second important idea: **model fitting is parameter selection by minimizing an error measure**.
+In the next chapter, this same logic becomes the machine-learning workflow.
 
 ### Interactive Figure Placeholder 2 - Noisy Polynomial Curve Fitting
 
@@ -188,25 +168,25 @@ This is the second important idea: **model fitting is parameter selection by min
 
 ## 3. Machine Learning As Data-Driven Parameter Search
 
-Machine learning can be introduced as a generalization of the curve-fitting idea.
+Curve fitting already belongs to the broad idea of machine learning. In Chapter 2 we used a simple polynomial model, but the logic was already the same: use data to choose parameter values so the model can make useful predictions.
 
-In machine learning, we still choose a model form. We still have parameters. We still compare predictions against known data. We still use a loss function. The main difference is that the model may have many more parameters, and the data may be too large or too complicated for a direct algebraic solution.
+The next step is to name the full workflow more clearly. In supervised machine learning, we train a model on known input-output data, then use the trained model to make a prediction at a new input. That prediction stage is called **inference**.
 
-The basic supervised learning workflow is:
-
-1. collect input-output data,
-2. choose a model family,
-3. define a loss function,
-4. adjust model parameters to reduce the loss,
-5. use the trained model to predict outputs for new inputs.
-
-For example, suppose a model learns a function:
+A trained model can be written as:
 
 $$
 \hat{y} = f_\theta(x)
 $$
 
-where `theta` represents all trainable parameters. The hat in `hat y` means prediction. During training, we compare the predicted value against known data:
+Here `theta` represents the learned parameters. Training adjusts `theta` using data. Inference means evaluating the learned function at a new `x` to obtain a predicted output $\hat{y}$.
+
+In this polynomial example, **model complexity** is directly related to the degree we choose. A higher-degree polynomial can bend more and capture a more complicated trend. But if the real trend is fairly simple, or if the dataset is too small, that extra flexibility can easily start matching random noise and become **overfitted**. A lower-degree polynomial is more rigid, so it may miss important curvature and become **underfitted**. So the goal is not to maximize complexity, but to find a **reasonable fit** that captures the main trend without chasing noise. This leads to **generalization**: a good model should behave well not only on the training points, but also on new unseen data.
+
+The interactive figure below makes that idea visible. Yellow points are training data, grey points are hidden test data, and the dashed curve shows the true relationship. Adjust the capacity slider, then drag the cursor to a new `x`. Watch how the model prediction changes, and compare it with the true value at that same location. This is machine-learning inference in its simplest form.
+
+This is the third important idea: **machine learning trains a parameterized model from data so it can make useful predictions on unseen inputs, and its quality is judged by generalization rather than training fit alone**.
+
+In the next chapter, the same logic stays in place, but the model family becomes much more powerful.
 
 $$
 L(\theta) = \frac{1}{N}\sum_{i=1}^{N}\left(f_\theta(x_i) - y_i\right)^2.
@@ -266,7 +246,7 @@ This is the third important idea: **machine learning is not magic; it is paramet
 
 Deep learning follows the same basic pattern as curve fitting and machine learning, but the chosen model is now a neural network.
 
-In the PINN Playground, the model is a multilayer perceptron, or MLP. An MLP is a function made from layers of simple operations. Each layer takes numbers in, applies weights and biases, passes the result through an activation function, and sends the output to the next layer.
+In the PINN Playground, the model is a multilayer perceptron, or MLP. An MLP is a function made from layers of simple operations. It is powerful when the mapping in the data is too complicated or unintuitive to describe well with a simple model, and when we have enough data to constrain that flexibility. In engineering, one example is learning a surrogate that maps design or loading parameters to a structural response when the relationship is too complicated to write down directly. Each layer takes numbers in, applies weights and biases, passes the result through an activation function, and sends the output to the next layer.
 
 A simple layer can be written as:
 
@@ -296,7 +276,7 @@ The symbol `theta` now includes all weights and biases in all layers. A small ne
 
 ### Loss function in deep learning
 
-The loss function plays the same role as it did in curve fitting. It measures the difference between the model prediction and the target.
+The loss function still plays the same role as it did in the polynomial examples from the previous chapters. It measures the difference between the model prediction and the target.
 
 For ordinary supervised learning:
 
@@ -304,7 +284,7 @@ $$
 L_{data} = \frac{1}{N}\sum_{i=1}^{N}\left(f_\theta(x_i) - y_i\right)^2.
 $$
 
-The optimizer changes the network parameters to reduce this loss. In practice, this is usually done by gradient-based optimization. The network computes predictions, the loss is computed, gradients are calculated, and the parameters are updated.
+The key difference is that an MLP is much more complex. With a polynomial model, parameter fitting can often be written as a relatively direct algebraic or least-squares problem. For an MLP, the many layers and nonlinear activations make that kind of analytic solution impractical, so we instead use an **optimizer** to gradually adjust the weights and biases and reduce the loss. In practice, this is usually done with gradient-based methods such as SGD and related variants, but this tutorial stays at a high level. The main idea is simply that training becomes an iterative search for better parameters.
 
 ### Epochs and training
 

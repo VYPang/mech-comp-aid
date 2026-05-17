@@ -59,7 +59,7 @@ export function createPolynomialFitFigure(container) {
       <span class="lesson-control-value" data-role="samples-value">5</span>
     </label>
     <label class="lesson-control lesson-control-checkbox">
-      <input type="checkbox" data-role="show-truth" /> Show hidden true cubic
+      <input type="checkbox" data-role="show-truth" /> Show true curve
     </label>
     <button type="button" class="lesson-button" data-role="regenerate">Regenerate noisy data</button>
   `;
