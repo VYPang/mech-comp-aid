@@ -322,6 +322,7 @@ export function createTutor({ ui, runtimeState, progressStore }) {
       .map((turn, index) => renderTurn(turn, index))
       .join("");
     bindTurnHandlers();
+    renderTutorMath(dom.thread);
     dom.thread.scrollTop = dom.thread.scrollHeight;
   }
 
@@ -438,9 +439,24 @@ export function createTutor({ ui, runtimeState, progressStore }) {
   }
 
   function renderMessageText(text) {
-    // Conservative formatter: escape HTML, then turn double newlines into
-    // paragraph breaks and single newlines into <br>.
-    const escaped = escapeHtml(text);
+    const source = String(text ?? "");
+    const markdown = window.marked;
+    const sanitizer = window.DOMPurify;
+
+    if (markdown?.parse && sanitizer?.sanitize) {
+      const rendered = markdown.parse(source, {
+        breaks: true,
+        gfm: true,
+        headerIds: false,
+        mangle: false,
+      });
+      return sanitizer.sanitize(rendered, {
+        USE_PROFILES: { html: true },
+      });
+    }
+
+    // Fallback formatter when the Markdown libraries are unavailable.
+    const escaped = escapeHtml(source);
     return escaped
       .split(/\n{2,}/)
       .map((paragraph) => `<p>${paragraph.replace(/\n/g, "<br>")}</p>`)
@@ -901,6 +917,26 @@ function escapeHtml(value) {
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;")
     .replace(/'/g, "&#39;");
+}
+
+function renderTutorMath(root) {
+  const renderMath = window.renderMathInElement;
+  if (!root || typeof renderMath !== "function") {
+    return;
+  }
+
+  root.querySelectorAll(".tutor-bubble-assistant .tutor-bubble-body").forEach((node) => {
+    renderMath(node, {
+      delimiters: [
+        { left: "$$", right: "$$", display: true },
+        { left: "\\(", right: "\\)", display: false },
+        { left: "$", right: "$", display: false },
+      ],
+      ignoredTags: ["script", "noscript", "style", "textarea", "pre", "code"],
+      strict: "ignore",
+      throwOnError: false,
+    });
+  });
 }
 
 function normalizeComparableValue(value) {

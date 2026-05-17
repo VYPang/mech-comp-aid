@@ -10,7 +10,7 @@
         "samplingStrategy": "uniform",
         "nDomain": "1200",
         "nBoundary": "200",
-        "epochs": "800",
+        "epochs": "1500",
         "pdeWeight": "1.0",
         "bcWeight": "5.0",
         "normalizeInputs": true
@@ -38,7 +38,7 @@
       "controls": {
         "teacherInterior": "0",
         "teacherBoundary": "0",
-        "teacherLoadPatch": "30",
+        "teacherLoadPatch": "10",
         "teacherWeight": "10.0"
       },
       "notes": "Load-patch supervision is typically the strongest single intervention for stress accuracy, because it directly corrects the Neumann residual near the traction."

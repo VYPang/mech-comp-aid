@@ -430,6 +430,12 @@ Rules for `suggestion`:
 - Prefer small targeted changes. Do not rewrite the whole configuration.
 - Always include a `rationale` tied to the active learning task.
 
+Formatting rules for `message`:
+- The `message` string may use Markdown for paragraphs, emphasis, and lists.
+- When writing equations or variable symbols, use LaTeX delimiters: `$...$`
+    for inline math and `$$...$$` for display math.
+- Do not wrap the entire `message` in code fences.
+
 Rules for `citations`:
 - Cite the preset id when you base advice on a curated preset.
 - Cite the lesson excerpt id when you use a curated teaching concept.

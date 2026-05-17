@@ -124,22 +124,20 @@ export function createTutorialCell({ ui, runtimeState, shell }) {
       </article>
     `;
 
-    if (!activeSection.figureFactory) {
-      return;
+    if (activeSection.figureFactory) {
+      const host = container.querySelector(`[data-figure-id="${activeSection.id}"]`);
+      if (host) {
+        try {
+          state.figureInstances.set(activeSection.id, activeSection.figureFactory(host));
+        } catch (err) {
+          host.innerHTML = `<div class="lesson-callout lesson-callout-warn">Figure failed to load: ${err?.message ?? err}</div>`;
+          // eslint-disable-next-line no-console
+          console.error("Tutorial figure failed", activeSection.id, err);
+        }
+      }
     }
 
-    const host = container.querySelector(`[data-figure-id="${activeSection.id}"]`);
-    if (!host) {
-      return;
-    }
-
-    try {
-      state.figureInstances.set(activeSection.id, activeSection.figureFactory(host));
-    } catch (err) {
-      host.innerHTML = `<div class="lesson-callout lesson-callout-warn">Figure failed to load: ${err?.message ?? err}</div>`;
-      // eslint-disable-next-line no-console
-      console.error("Tutorial figure failed", activeSection.id, err);
-    }
+    renderLessonMath(container);
   }
 
   function syncRuntimeTutorialContext(section = null) {
@@ -167,4 +165,22 @@ function htmlToPlainText(html) {
   const el = document.createElement("div");
   el.innerHTML = html;
   return (el.textContent ?? "").replace(/\s+/g, " ").trim();
+}
+
+function renderLessonMath(root) {
+  const renderMath = window.renderMathInElement;
+  if (!root || typeof renderMath !== "function") {
+    return;
+  }
+
+  renderMath(root, {
+    delimiters: [
+      { left: "$$", right: "$$", display: true },
+      { left: "\\(", right: "\\)", display: false },
+      { left: "$", right: "$", display: false },
+    ],
+    ignoredTags: ["script", "noscript", "style", "textarea", "pre", "code"],
+    strict: "ignore",
+    throwOnError: false,
+  });
 }
