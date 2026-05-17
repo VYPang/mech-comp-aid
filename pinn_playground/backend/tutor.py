@@ -429,6 +429,12 @@ Rules for `suggestion`:
     `available_control_options`. Do not use free-text labels or synonyms.
 - Prefer small targeted changes. Do not rewrite the whole configuration.
 - Always include a `rationale` tied to the active learning task.
+- If you recommend residual-adaptive sampling, include
+    `"samplingStrategy": "adaptive"` in the suggested controls.
+- If you recommend Fourier bandwidth or set `fourierSigma`, include
+    `"fourierFeatures": true` in the suggested controls.
+- If you recommend input normalization, include
+    `"normalizeInputs": true` in the suggested controls.
 
 Formatting rules for `message`:
 - The `message` string may use Markdown for paragraphs, emphasis, and lists.
@@ -669,6 +675,26 @@ def _canonicalize_control_value(
     return False, value
 
 
+def _apply_suggestion_dependencies(controls: dict[str, Any]) -> tuple[dict[str, Any], list[str]]:
+    """Fill in control dependencies required by checkbox-driven UI affordances."""
+    completed = dict(controls)
+    warnings: list[str] = []
+
+    if "residualResampleEvery" in completed and completed.get("samplingStrategy") != "adaptive":
+        completed["samplingStrategy"] = "adaptive"
+        warnings.append("auto_enabled_adaptive_sampling")
+
+    if "fourierSigma" in completed and completed.get("fourierFeatures") is not True:
+        completed["fourierFeatures"] = True
+        warnings.append("auto_enabled_fourier_features")
+
+    normalize_value = completed.get("normalizeInputs")
+    if normalize_value is not None:
+        completed["normalizeInputs"] = bool(normalize_value)
+
+    return completed, warnings
+
+
 def _validate_response(
     raw_payload: dict[str, Any] | None,
     request: TutorChatRequest,
@@ -747,6 +773,8 @@ def _validate_response(
                     "dropped_invalid_select_values:" + ",".join(sorted(invalid_select_values))
                 )
             if filtered:
+                filtered, dependency_warnings = _apply_suggestion_dependencies(filtered)
+                warnings.extend(dependency_warnings)
                 highlight_raw = suggestion_raw.get("highlightKeys") or list(filtered.keys())
                 highlight = [str(k) for k in highlight_raw if str(k) in filtered]
                 suggestion = TutorSuggestion(
