@@ -1,50 +1,150 @@
-// Figure 5 - Building a PINN loss from physics.
-// Schematic of a 2D domain with three categories of points and three loss
-// terms. Toggling categories highlights which points contribute and updates
-// a small bar chart of the weighted loss decomposition.
+// Figure 5 - PINN points on the base-frame geometry.
+// Shows how interior and boundary coordinates feed different physics checks.
 import {
   buildFigureShell,
   makeFrameScheduler,
-  makeRng,
   setupCanvas,
 } from "../figure-base.js?v=checkpoint-shell-15";
 
-function samplePoints(seed) {
-  const rng = makeRng(seed);
-  const interior = [];
-  for (let i = 0; i < 60; i += 1) interior.push([rng() * 0.92 + 0.04, rng() * 0.88 + 0.06]);
-  const boundary = [];
-  for (let i = 0; i < 12; i += 1) boundary.push([i / 11, 0.02]);              // bottom (fixed)
-  for (let i = 0; i < 8; i += 1) boundary.push([0.02, 0.06 + i * 0.11]);      // left free
-  for (let i = 0; i < 8; i += 1) boundary.push([0.98, 0.06 + i * 0.11]);      // right free
-  for (let i = 0; i < 8; i += 1) {
-    const t = i / 7;
-    if (t > 0.35 && t < 0.65) continue; // load patch removed
-    boundary.push([t, 0.98]);
+const INNER_LO = 0.18;
+const INNER_HI = 0.82;
+const LOAD_MIN = 0.40;
+const LOAD_MAX = 0.60;
+const INTERIOR_BOUNDARY_CLEARANCE = 0.01;
+const INTERIOR_CORNER_CLEARANCE = 0.06;
+const CANVAS_HEIGHT_RATIO = 0.78;
+const TOP_LABEL_SPACE = 38;
+const BOTTOM_LABEL_SPACE = 54;
+
+const MODES = {
+  interior: {
+    label: "Interior collocation",
+    color: "rgb(34, 211, 238)",
+    point: [0.50, 0.91],
+    loss: "PDE loss",
+    check: "Equilibrium residual: div(sigma) should be close to 0.",
+    flow: ["coordinate (x, y)", "MLP predicts displacement (u, v)", "differentiate to strain and stress", "check equilibrium residual"],
+  },
+  fixed: {
+    label: "Fixed boundary",
+    color: "rgb(45, 212, 191)",
+    point: [0.50, 0.00],
+    loss: "Boundary-condition loss",
+    check: "Support condition: u = 0 and v = 0 on the bottom edge.",
+    flow: ["boundary coordinate", "MLP predicts displacement", "compare with prescribed displacement", "penalize support error"],
+  },
+  load: {
+    label: "Loaded boundary",
+    color: "rgb(250, 204, 21)",
+    point: [0.50, 1.00],
+    loss: "Boundary-condition loss",
+    check: "Traction condition: stress acting on the top patch should match the applied load.",
+    flow: ["load-patch coordinate", "MLP predicts displacement", "differentiate to stress", "compare traction with applied load"],
+  },
+  free: {
+    label: "Free boundary",
+    color: "rgb(244, 114, 182)",
+    point: [INNER_LO, 0.50],
+    loss: "Boundary-condition loss",
+    check: "Free-surface condition: traction should be close to 0 on the hole wall and unloaded edges.",
+    flow: ["free-boundary coordinate", "MLP predicts displacement", "differentiate to stress", "penalize nonzero traction"],
+  },
+};
+
+function isInsideFrame(coordX, coordY) {
+  const insideOuter = coordX >= 0 && coordX <= 1 && coordY >= 0 && coordY <= 1;
+  const insideHole = coordX > INNER_LO && coordX < INNER_HI && coordY > INNER_LO && coordY < INNER_HI;
+  return insideOuter && !insideHole;
+}
+
+function distanceToInnerBoundary(coordX, coordY) {
+  const withinInnerX = coordX >= INNER_LO && coordX <= INNER_HI;
+  const withinInnerY = coordY >= INNER_LO && coordY <= INNER_HI;
+
+  if (withinInnerX) {
+    if (coordY < INNER_LO) return INNER_LO - coordY;
+    if (coordY > INNER_HI) return coordY - INNER_HI;
   }
-  const teacher = [];
-  for (let i = 0; i < 5; i += 1) teacher.push([0.36 + i * 0.07, 0.96]);     // load patch teacher
-  teacher.push([0.5, 0.5]);
-  teacher.push([0.3, 0.7]);
-  return { interior, boundary, teacher };
+
+  if (withinInnerY) {
+    if (coordX < INNER_LO) return INNER_LO - coordX;
+    if (coordX > INNER_HI) return coordX - INNER_HI;
+  }
+
+  const innerCorners = [
+    [INNER_LO, INNER_LO],
+    [INNER_LO, INNER_HI],
+    [INNER_HI, INNER_LO],
+    [INNER_HI, INNER_HI],
+  ];
+  return Math.min(...innerCorners.map(([cornerX, cornerY]) => Math.hypot(coordX - cornerX, coordY - cornerY)));
+}
+
+function distanceToInnerCorner(coordX, coordY) {
+  const innerCorners = [
+    [INNER_LO, INNER_LO],
+    [INNER_LO, INNER_HI],
+    [INNER_HI, INNER_LO],
+    [INNER_HI, INNER_HI],
+  ];
+  return Math.min(...innerCorners.map(([cornerX, cornerY]) => Math.hypot(coordX - cornerX, coordY - cornerY)));
+}
+
+function buildInteriorPoints() {
+  const points = [];
+  const divisions = 17;
+  for (let rowIndex = 1; rowIndex < divisions; rowIndex += 1) {
+    for (let columnIndex = 1; columnIndex < divisions; columnIndex += 1) {
+      const coordX = columnIndex / divisions;
+      const coordY = rowIndex / divisions;
+      if (
+        isInsideFrame(coordX, coordY)
+        && distanceToInnerBoundary(coordX, coordY) >= INTERIOR_BOUNDARY_CLEARANCE
+        && distanceToInnerCorner(coordX, coordY) >= INTERIOR_CORNER_CLEARANCE
+      ) {
+        points.push([coordX, coordY]);
+      }
+    }
+  }
+  return points;
+}
+
+function linePoints(startX, startY, endX, endY, count) {
+  return Array.from({ length: count }, (_, index) => {
+    const ratio = count === 1 ? 0 : index / (count - 1);
+    return [startX + (endX - startX) * ratio, startY + (endY - startY) * ratio];
+  });
+}
+
+function buildBoundaryPoints() {
+  const fixed = linePoints(0.04, 0, 0.96, 0, 17);
+  const load = linePoints(LOAD_MIN, 1, LOAD_MAX, 1, 8);
+  const topLeft = linePoints(0.04, 1, LOAD_MIN - 0.035, 1, 7);
+  const topRight = linePoints(LOAD_MAX + 0.035, 1, 0.96, 1, 7);
+  const leftOuter = linePoints(0, 0.08, 0, 0.92, 12);
+  const rightOuter = linePoints(1, 0.08, 1, 0.92, 12);
+  const innerBottom = linePoints(INNER_LO, INNER_LO, INNER_HI, INNER_LO, 13);
+  const innerTop = linePoints(INNER_LO, INNER_HI, INNER_HI, INNER_HI, 13);
+  const innerLeft = linePoints(INNER_LO, INNER_LO, INNER_LO, INNER_HI, 13);
+  const innerRight = linePoints(INNER_HI, INNER_LO, INNER_HI, INNER_HI, 13);
+  return {
+    fixed,
+    load,
+    free: [...topLeft, ...topRight, ...leftOuter, ...rightOuter, ...innerBottom, ...innerTop, ...innerLeft, ...innerRight],
+  };
 }
 
 export function createPinnLossFigure(container) {
   const { body } = buildFigureShell(container, {
-    title: "Figure 5 - PINN loss = PDE + boundary + (optional) data",
-    caption: "Toggle which loss terms are active. Highlighted points are the ones contributing to the current loss.",
+    title: "Figure 5 - Collocation and boundary points on the metal frame",
+    caption: "Select a point type to see how a coordinate becomes a PINN physics check.",
   });
 
   const controls = document.createElement("div");
   controls.className = "lesson-figure-controls";
-  controls.innerHTML = `
-    <label class="lesson-control lesson-control-checkbox"><input type="checkbox" data-role="pde" checked /> PDE loss (interior)</label>
-    <label class="lesson-control lesson-control-checkbox"><input type="checkbox" data-role="bc" checked /> BC loss (boundary)</label>
-    <label class="lesson-control lesson-control-checkbox"><input type="checkbox" data-role="data" /> Teacher data loss</label>
-    <label class="lesson-control"><span>w_PDE</span><input type="range" min="0" max="3" step="0.05" value="1" data-role="w-pde" /><span class="lesson-control-value" data-role="w-pde-value">1.00</span></label>
-    <label class="lesson-control"><span>w_BC</span><input type="range" min="0" max="3" step="0.05" value="1" data-role="w-bc" /><span class="lesson-control-value" data-role="w-bc-value">1.00</span></label>
-    <label class="lesson-control"><span>w_data</span><input type="range" min="0" max="3" step="0.05" value="1" data-role="w-data" /><span class="lesson-control-value" data-role="w-data-value">1.00</span></label>
-  `;
+  controls.innerHTML = Object.entries(MODES).map(([mode, entry]) => `
+    <button type="button" class="lesson-button" data-role="mode" data-mode="${mode}">${entry.label}</button>
+  `).join("");
   body.appendChild(controls);
 
   const layout = document.createElement("div");
@@ -58,116 +158,194 @@ export function createPinnLossFigure(container) {
   layout.append(canvasWrap, sidebar);
   body.appendChild(layout);
 
-  const points = samplePoints(13);
-  const state = {
-    pde: true, bc: true, data: false,
-    wPde: 1, wBc: 1, wData: 1,
-    Lpde: 0.42, Lbc: 0.18, Ldata: 0.07,
+  const pointSets = {
+    interior: buildInteriorPoints(),
+    ...buildBoundaryPoints(),
   };
+  const state = { mode: "interior" };
 
   let ctx;
-  let cssWidth = 0; let cssHeight = 0;
+  let cssWidth = 0;
+  let cssHeight = 0;
+  let frameBox = null;
   const scheduleDraw = makeFrameScheduler(draw);
 
   function layoutCanvas() {
-    cssWidth = canvasWrap.clientWidth || 480;
-    cssHeight = Math.round(cssWidth * 0.78);
+    cssWidth = canvasWrap.clientWidth || 520;
+    cssHeight = Math.round(cssWidth * CANVAS_HEIGHT_RATIO);
     ctx = setupCanvas(canvas, cssWidth, cssHeight);
+    const availableHeight = cssHeight - TOP_LABEL_SPACE - BOTTOM_LABEL_SPACE;
+    const frameSize = Math.min(cssWidth * 0.76, availableHeight);
+    frameBox = {
+      left: (cssWidth - frameSize) * 0.5,
+      top: TOP_LABEL_SPACE + (availableHeight - frameSize) * 0.5,
+      size: frameSize,
+    };
   }
 
-  function map(p) {
-    const m = 18;
-    return [m + p[0] * (cssWidth - 2 * m), m + (1 - p[1]) * (cssHeight - 2 * m)];
+  function toPixel(point) {
+    const [coordX, coordY] = point;
+    return [
+      frameBox.left + coordX * frameBox.size,
+      frameBox.top + (1 - coordY) * frameBox.size,
+    ];
   }
 
-  function drawDot(p, color, r, alpha = 1) {
-    const [x, y] = map(p);
+  function drawFrame() {
+    const { left, top, size } = frameBox;
+    const innerLeft = left + INNER_LO * size;
+    const innerTop = top + (1 - INNER_HI) * size;
+    const innerSize = (INNER_HI - INNER_LO) * size;
+
+    ctx.save();
     ctx.beginPath();
-    ctx.fillStyle = color.replace("ALPHA", String(alpha));
-    ctx.arc(x, y, r, 0, Math.PI * 2);
-    ctx.fill();
+    ctx.rect(left, top, size, size);
+    ctx.rect(innerLeft, innerTop, innerSize, innerSize);
+    ctx.fillStyle = "rgba(15, 23, 42, 0.78)";
+    ctx.fill("evenodd");
+    ctx.lineWidth = 2;
+    ctx.strokeStyle = "rgba(203, 213, 225, 0.85)";
+    ctx.strokeRect(left, top, size, size);
+    ctx.strokeRect(innerLeft, innerTop, innerSize, innerSize);
+    ctx.restore();
+
+    drawSupport(left, top + size, size);
+    drawLoadPatch(left, top, size);
   }
 
-  function draw() {
-    if (!ctx) return;
-    ctx.clearRect(0, 0, cssWidth, cssHeight);
-    const m = 18;
-    ctx.strokeStyle = "rgba(148,163,184,0.7)";
-    ctx.lineWidth = 1.5;
-    ctx.strokeRect(m, m, cssWidth - 2 * m, cssHeight - 2 * m);
-    ctx.strokeStyle = "rgba(45, 212, 191, 0.85)";
+  function drawSupport(left, bottom, size) {
+    ctx.save();
+    ctx.strokeStyle = "rgb(45, 212, 191)";
     ctx.lineWidth = 3;
     ctx.beginPath();
-    ctx.moveTo(m, cssHeight - m);
-    ctx.lineTo(cssWidth - m, cssHeight - m);
+    ctx.moveTo(left, bottom);
+    ctx.lineTo(left + size, bottom);
     ctx.stroke();
-    const lp0 = m + 0.36 * (cssWidth - 2 * m);
-    const lp1 = m + 0.64 * (cssWidth - 2 * m);
+    ctx.lineWidth = 1.4;
+    for (let index = 0; index <= 12; index += 1) {
+      const hatchX = left + (index / 12) * size;
+      ctx.beginPath();
+      ctx.moveTo(hatchX - 8, bottom + 12);
+      ctx.lineTo(hatchX + 6, bottom);
+      ctx.stroke();
+    }
+    ctx.restore();
+  }
+
+  function drawLoadPatch(left, top, size) {
+    const patchLeft = left + LOAD_MIN * size;
+    const patchRight = left + LOAD_MAX * size;
+    ctx.save();
     ctx.strokeStyle = "rgb(250, 204, 21)";
     ctx.lineWidth = 4;
     ctx.beginPath();
-    ctx.moveTo(lp0, m);
-    ctx.lineTo(lp1, m);
+    ctx.moveTo(patchLeft, top);
+    ctx.lineTo(patchRight, top);
     ctx.stroke();
-    for (let i = 0; i <= 4; i += 1) {
-      const x = lp0 + (lp1 - lp0) * (i / 4);
+    ctx.fillStyle = "rgb(250, 204, 21)";
+    for (let index = 0; index < 4; index += 1) {
+      const arrowX = patchLeft + ((index + 0.5) / 4) * (patchRight - patchLeft);
       ctx.beginPath();
-      ctx.moveTo(x, m - 10);
-      ctx.lineTo(x, m);
+      ctx.moveTo(arrowX, top - 22);
+      ctx.lineTo(arrowX, top - 4);
       ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(arrowX, top - 2);
+      ctx.lineTo(arrowX - 5, top - 10);
+      ctx.lineTo(arrowX + 5, top - 10);
+      ctx.closePath();
+      ctx.fill();
     }
+    ctx.restore();
+  }
 
-    points.interior.forEach((p) =>
-      drawDot(p, "rgba(34, 211, 238, ALPHA)", state.pde ? 3.5 : 2, state.pde ? 0.95 : 0.25));
-    points.boundary.forEach((p) =>
-      drawDot(p, "rgba(244, 114, 182, ALPHA)", state.bc ? 4 : 2.2, state.bc ? 0.95 : 0.25));
-    points.teacher.forEach((p) =>
-      drawDot(p, "rgba(250, 204, 21, ALPHA)", state.data ? 5 : 2.5, state.data ? 1.0 : 0.2));
+  function drawPoints(points, color, highlighted) {
+    ctx.save();
+    points.forEach((point) => {
+      const [pixelX, pixelY] = toPixel(point);
+      ctx.beginPath();
+      ctx.fillStyle = highlighted ? color : "rgba(148, 163, 184, 0.28)";
+      ctx.strokeStyle = "rgba(15, 23, 42, 0.9)";
+      ctx.lineWidth = highlighted ? 1.1 : 0.6;
+      ctx.arc(pixelX, pixelY, highlighted ? 3.5 : 2.3, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
+    });
+    ctx.restore();
+  }
 
-    const lp = state.pde ? state.wPde * state.Lpde : 0;
-    const lb = state.bc ? state.wBc * state.Lbc : 0;
-    const ld = state.data ? state.wData * state.Ldata : 0;
-    const total = lp + lb + ld;
-    const bar = (label, value, color) => {
-      const pct = total > 0 ? (value / total) * 100 : 0;
-      return `
-        <div class="lesson-bar-row">
-          <span class="lesson-bar-label">${label}</span>
-          <div class="lesson-bar-track"><div class="lesson-bar-fill" style="width:${pct.toFixed(1)}%;background:${color}"></div></div>
-          <span class="lesson-bar-value">${value.toFixed(3)}</span>
-        </div>
-      `;
-    };
+  function drawSelectedPoint() {
+    const mode = MODES[state.mode];
+    const [pixelX, pixelY] = toPixel(mode.point);
+    ctx.save();
+    ctx.beginPath();
+    ctx.strokeStyle = "rgb(248, 250, 252)";
+    ctx.lineWidth = 3;
+    ctx.arc(pixelX, pixelY, 8, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.fillStyle = mode.color;
+    ctx.arc(pixelX, pixelY, 4.5, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+  }
+
+  function drawLabels() {
+    const { left, top, size } = frameBox;
+    ctx.save();
+    ctx.fillStyle = "rgba(226, 232, 240, 0.9)";
+    ctx.font = "12px Inter, sans-serif";
+    ctx.textAlign = "center";
+    ctx.fillText("loaded top patch", left + 0.5 * size, top - 30);
+    ctx.fillText("fixed bottom edge", left + 0.5 * size, top + size + 28);
+    ctx.textAlign = "left";
+    ctx.fillText("inner free boundary", left + INNER_LO * size + 8, top + 0.5 * size);
+    ctx.restore();
+  }
+
+  function updateSidebar() {
+    const mode = MODES[state.mode];
+    const [coordX, coordY] = mode.point;
     sidebar.innerHTML = `
-      <div class="lesson-stat-row"><span>Total weighted loss</span><strong>${total.toFixed(3)}</strong></div>
-      ${bar("w · L<sub>PDE</sub>", lp, "rgb(34,211,238)")}
-      ${bar("w · L<sub>BC</sub>", lb, "rgb(244,114,182)")}
-      ${bar("w · L<sub>data</sub>", ld, "rgb(250,204,21)")}
-      <p class="lesson-figure-hint">Per-category losses are illustrative constants — only the weighting and the active terms react. Real values come from training in the next checkpoint.</p>
+      <div class="lesson-stat-row"><span>Selected point</span><strong>${mode.label}</strong></div>
+      <div class="lesson-stat-row"><span>Coordinate</span><strong>(${coordX.toFixed(2)}, ${coordY.toFixed(2)})</strong></div>
+      <div class="lesson-stat-row"><span>Loss term</span><strong>${mode.loss}</strong></div>
+      <div class="lesson-callout lesson-callout-good">${mode.check}</div>
+      <ol class="lesson-figure-bullets">
+        ${mode.flow.map((step) => `<li>${step}</li>`).join("")}
+      </ol>
+      <p class="lesson-figure-hint">This figure focuses on PDE and boundary-condition points. Data loss is still possible, but it is not the visual emphasis here.</p>
     `;
+  }
+
+  function updateButtons() {
+    controls.querySelectorAll("[data-role=mode]").forEach((button) => {
+      const active = button.dataset.mode === state.mode;
+      button.classList.toggle("lesson-button-secondary", !active);
+    });
+  }
+
+  function draw() {
+    if (!ctx || !frameBox) return;
+    ctx.clearRect(0, 0, cssWidth, cssHeight);
+    drawFrame();
+    Object.entries(MODES).forEach(([modeName, mode]) => {
+      drawPoints(pointSets[modeName], mode.color, state.mode === modeName);
+    });
+    drawSelectedPoint();
+    drawLabels();
+    updateSidebar();
+    updateButtons();
   }
 
   function init() {
     layoutCanvas();
-    const wireBool = (role, key) => {
-      const input = controls.querySelector(`[data-role=${role}]`);
-      input.addEventListener("change", () => { state[key] = input.checked; scheduleDraw(); });
-    };
-    const wireRange = (role, key, valueRole) => {
-      const input = controls.querySelector(`[data-role=${role}]`);
-      const out = controls.querySelector(`[data-role=${valueRole}]`);
-      input.addEventListener("input", () => {
-        state[key] = parseFloat(input.value);
-        out.textContent = state[key].toFixed(2);
+    controls.querySelectorAll("[data-role=mode]").forEach((button) => {
+      button.addEventListener("click", () => {
+        state.mode = button.dataset.mode;
         scheduleDraw();
       });
-    };
-    wireBool("pde", "pde");
-    wireBool("bc", "bc");
-    wireBool("data", "data");
-    wireRange("w-pde", "wPde", "w-pde-value");
-    wireRange("w-bc", "wBc", "w-bc-value");
-    wireRange("w-data", "wData", "w-data-value");
+    });
     const resizeObs = new ResizeObserver(() => { layoutCanvas(); scheduleDraw(); });
     resizeObs.observe(canvasWrap);
     scheduleDraw();

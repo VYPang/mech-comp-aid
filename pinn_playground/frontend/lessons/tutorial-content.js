@@ -150,40 +150,40 @@ export const TUTORIAL_SECTIONS = [
     title: "5. From Deep Learning To Physics-Informed Neural Networks",
     figureFactory: createPinnLossFigure,
     body: String.raw`
-      <p>An ordinary supervised neural network learns from data pairs <code>(xᵢ, yᵢ)</code>. A Physics-Informed Neural Network uses a different idea: the network is trained to satisfy physical laws, not only to match labels.</p>
-      <p>The model still predicts a function. In the PINN Playground the network maps position to displacement:</p>
+      <p>In Chapter 4, a neural network was trained from data by comparing predictions with known targets. A PINN keeps that same idea. If data are available, we can still use a data loss such as mean squared error:</p>
+      <p class="lesson-eq">$$L_{\mathrm{data}} = \frac{1}{N} \sum_{i=1}^{N} \lVert f_{\theta}(x_i) - y_i \rVert^2$$</p>
+      <p>The new idea is that we add another term to the loss, not from labels, but from the governing physics equations. This additional term penalizes outputs that violate the physics, so the model can learn a useful solution even when data are sparse or not abundant.</p>
+      <p>In the PINN Playground, the model maps position to displacement:</p>
       <p class="lesson-eq">$$(x, y) \mapsto (u(x, y), v(x, y))$$</p>
-      <p>Because the network is differentiable, we can take its derivatives and check whether physics is satisfied.</p>
-      <p>Many physical systems are described by differential equations. The equation can often be rearranged into a residual form:</p>
-      <p class="lesson-eq">$$R(x) = 0$$</p>
-      <p>If a neural network predicts a field, we substitute that prediction into the equation; if the prediction satisfies the physics, the residual should be close to zero. The PDE loss then becomes:</p>
-      <p class="lesson-eq">$$L_{\mathrm{PDE}} = \frac{1}{N} \sum_{i=1}^{N} \lvert R(x_i) \rvert^2$$</p>
-      <p>The points <code>xᵢ</code> are called collocation points.</p>
-      <p>For 2D solid mechanics, the network predicts displacement; we then differentiate to get strain, apply the material law to get stress, and require equilibrium in the interior:</p>
+      <p>That means the network predicts how much each coordinate moves under loading. From the predicted displacement field, we can compute strain, then stress, and from stress we can compute derived quantities such as the von Mises stress field:</p>
+      <p class="lesson-eq">$$\varepsilon = \frac{1}{2}\left(\nabla u + \nabla u^{T}\right), \qquad \sigma = C : \varepsilon$$</p>
+      <p class="lesson-eq">$$\sigma_{\mathrm{vm}} = \sqrt{\sigma_{xx}^{2} - \sigma_{xx}\sigma_{yy} + \sigma_{yy}^{2} + 3\tau_{xy}^{2}}$$</p>
+      <p>Inside the solid, the prediction must also satisfy the governing physics. For this problem, the equilibrium equation is:</p>
       <p class="lesson-eq">$$\nabla \cdot \sigma = 0$$</p>
-      <p>Boundary conditions become additional terms in the loss: the bottom is fixed, the top load patch receives traction, the free boundaries should have near-zero traction.</p>
-      <p>So the total PINN loss is built from several pieces:</p>
+      <p>We rearrange that into a residual form by moving everything to one side:</p>
+      <p class="lesson-eq">$$R_{\mathrm{eq}}(x, y) = \nabla \cdot \sigma(x, y)$$</p>
+      <p>If the model is physically correct, this residual should be close to zero. So at interior collocation points we add a PDE loss term such as:</p>
+      <p class="lesson-eq">$$L_{\mathrm{PDE}} = \frac{1}{N} \sum_{i=1}^{N} \lvert R_{\mathrm{eq}}(x_i, y_i) \rvert^2$$</p>
+      <p>Boundary coordinates also contribute to the loss. Fixed boundaries should satisfy displacement constraints such as <code>u = 0</code> and <code>v = 0</code>. The load patch should satisfy the applied traction condition, and free boundaries should satisfy near-zero traction. These requirements are collected into a boundary-condition loss term $L_{\mathrm{BC}}$.</p>
+      <p>So the total PINN loss is built from physics, boundary conditions, and optionally data:</p>
       <p class="lesson-eq">$$L = w_{\mathrm{PDE}} L_{\mathrm{PDE}} + w_{\mathrm{BC}} L_{\mathrm{BC}} + w_{\mathrm{data}} L_{\mathrm{data}}$$</p>
-      <p>The data term may be absent. In a pure PINN the model trains only from physics residuals and boundary conditions; in a teacher-guided PINN, sparse data from a numerical solution can be added.</p>
-      <p>The figure below shows the three categories of points in a 2D domain. Toggle each loss term and adjust the weights to see how the dominant signal changes. This is the fifth important idea: <strong>a PINN trains a neural network not only to fit data, but also to satisfy differential equations and boundary conditions</strong>.</p>
+      <p>The figure below focuses on the geometry behind these physics terms. Interior collocation points contribute to the PDE residual, while boundary points contribute to fixed, loaded, or free-boundary checks. This is the fifth important idea: <strong>a PINN extends ordinary neural-network training by adding physics-based and boundary-condition losses, so the model is guided not only by data but also by the governing equations of the system</strong>.</p>
     `,
   },
   {
     id: "section-6",
-    title: "6. PINN Failure Modes And Practical Mitigation Tricks",
+    title: "6. PINN Failure Modes And Advanced Training Tricks",
     figureFactory: createPinnFailureFigure,
     body: String.raw`
-      <p>PINNs are attractive because they combine neural networks with physical laws, but they are not automatically reliable. Many PINN failures happen because the optimization problem is difficult, not because the physical equations are wrong.</p>
-      <p><strong>Input normalization</strong> maps coordinates into a numerically convenient range, often around:</p>
-      <p class="lesson-eq">$$\hat{x}, \hat{y} \in [-1, 1]$$</p>
-      <p>Networks are sensitive to scale, and even when coordinates are already small, normalization can make activation behavior more stable. In the playground, input normalization helps the MLP use its capacity more effectively across the domain.</p>
-      <p><strong>Loss balancing</strong> matters because if one term is much larger than the others, the optimizer may mostly reduce that term and ignore the rest. The model may reduce interior equilibrium residual while still violating a boundary condition. Loss weights are not just numerical decorations; they define what the optimizer pays attention to.</p>
-      <p><strong>Pure physics training</strong> can be hard. The model must discover a field that satisfies the PDE, the boundary conditions, the geometry, and any material assumptions, with feedback that comes only from residuals and boundary losses. If those losses are indirect, sparse, or poorly scaled, training may converge to a field that reduces the loss but still misses important physical behavior.</p>
-      <p><strong>Dirichlet versus Neumann boundary conditions.</strong> Dirichlet conditions specify the value of the solution directly — direct supervision on the network output. Neumann conditions specify a derivative-related quantity such as traction; the model predicts displacement, but the load condition is imposed through stress, which depends on displacement gradients:</p>
+      <p>PINNs can fail even when the governing equations are correct. The main difficulty is often the training formulation. A pure PINN trained only from PDE residual and boundary-condition loss has no dense target data telling it what the solution should look like, so the optimizer must discover the field only from indirect physics signals.</p>
+      <p>For the current problem, that difficulty is strongest on the loaded top patch. The network predicts displacement, so a <strong>Dirichlet</strong> boundary condition is relatively direct because it tells the model what output value to produce. A <strong>Neumann</strong> boundary condition is harder because it constrains traction through stress, and stress depends on displacement gradients:</p>
       <p class="lesson-eq">$$t = \sigma n$$</p>
-      <p>That makes the learning signal more indirect, which is one reason a plain PINN may learn a plausible-looking displacement field while still under-predicting stress magnitude.</p>
-      <p><strong>A small amount of data can help.</strong> Adding a few reliable data points acts as anchors; in the playground, teacher-guided training adds sparse FEM displacement samples on the load patch, exactly where the original boundary condition is indirect.</p>
-      <p>The figure below compares a toy "predicted" field against a fixed reference. Toggle normalization, swap the boundary type, and add teacher points one at a time to see each effect. This is the sixth important idea: <strong>PINN quality depends strongly on training design, scaling, sampling, boundary-condition type, and the amount of trustworthy guidance available</strong>.</p>
+      <p>So a plain traction-driven PINN can learn a displacement field that looks broadly reasonable while still under-predicting the stress magnitude near the load patch. This is not because the PDE is wrong. It is because the most important supervision arrives through derivatives rather than through direct displacement targets.</p>
+      <p>This is where <strong>teacher points</strong> help. A teacher point is just a sparse sampled data point with a trusted displacement value, usually taken from FEM. Conceptually, this is the same idea as the sampled points in Chapter 2 and the training data in Chapters 3 and 4: known input-output pairs guide the model. The difference is that in a PINN we use only a small number of these points, while still keeping the PDE and boundary losses active.</p>
+      <p>In this playground, load-patch teacher points are especially useful because they add direct displacement guidance exactly where the original loading information was indirect. They do not replace physics; they act as local anchors that make the optimization problem easier to solve.</p>
+      <h4 class="lesson-section-subtitle">Advanced Training Tricks</h4>
+      <p>Several training tricks can further improve convergence. <strong>Input normalization</strong> rescales coordinates into a numerically convenient range such as $[-1, 1]$, which helps the MLP use its capacity more effectively. <strong>Adaptive collocation sampling</strong> places or refreshes more domain points where the residual is still large, so training spends more effort where the model is currently wrong. <strong>Fourier-feature encoding</strong>, introduced together with the resampling improvements in this playground, gives the network richer high-frequency input representations so sharp local behavior is easier to express.</p>
+      <p>The figure below focuses on the first part of this story: why a Neumann traction condition gives the network a more indirect training signal than a Dirichlet displacement condition. This is the sixth important idea: <strong>PINN quality depends strongly on how the training problem is posed, where supervision is applied, and which numerical tricks are used to help the optimizer learn difficult physics</strong>.</p>
     `,
   },
   {
@@ -191,13 +191,13 @@ export const TUTORIAL_SECTIONS = [
     title: "7. PINNs Beyond Replacing FEM",
     figureFactory: createSurrogateFigure,
     body: String.raw`
-      <p>It is tempting to describe PINNs as an alternative to traditional numerical methods. Sometimes that is useful, but it is not the whole story. For many engineering problems FEM is still more mature, more reliable, and easier to verify. A PINN should not be trusted simply because it uses a neural network or because its loss curve decreases.</p>
-      <p>The deeper advantage of PINNs and related neural surrogates is that they can become fast, differentiable approximations of a physical system after training. A surrogate model is a cheaper approximation of a more expensive computation, valuable when the same physical system must be queried many times — design optimization, parameter studies, uncertainty quantification, inverse problems, real-time control, rapid what-if exploration.</p>
-      <p>Because neural networks are differentiable, they can participate naturally in gradient-based optimization. A trained model provides not only a prediction but also derivatives of that prediction with respect to inputs or design variables:</p>
+      <p>Chapter 6 showed an important limitation: a PINN is not automatically easy to train, and a pure physics-driven formulation can struggle when the supervision signal is indirect. That immediately raises the right engineering question: if FEM already gives a trusted answer for one load case, why use a PINN at all?</p>
+      <p>The answer is usually <strong>not</strong> that a PINN should blindly replace FEM. For many engineering problems FEM is still more mature, more reliable, and easier to verify. The stronger use case is different: after training, a PINN or related neural surrogate can become a fast approximation of the same physical system, so we can evaluate many similar cases much more cheaply.</p>
+      <p>A <strong>surrogate model</strong> is a cheaper approximation of a more expensive computation. In this setting, FEM remains the high-trust reference, while the trained neural model becomes the fast evaluator inside a larger workflow. That is useful when the same system must be queried many times: design optimization, parameter studies, uncertainty quantification, inverse problems, real-time control, or rapid what-if exploration.</p>
+      <p>Because neural networks are differentiable, they can also participate naturally in gradient-based design loops. A trained model provides not only a prediction but also derivatives of that prediction with respect to inputs or design variables:</p>
       <p class="lesson-eq">$$\frac{\mathrm{d}\hat{\sigma}}{\mathrm{d}d}$$</p>
-      <p>That makes PINN-style models attractive for workflows where the goal is not only to solve one case, but to search through a design space.</p>
-      <p>The black-box nature of deep learning is a real disadvantage in engineering. One way to reduce that disadvantage is to avoid asking the neural network to learn everything. Domain knowledge should still do as much work as possible: nondimensionalize variables, normalize inputs, encode known geometry features, separate boundary regions by physical meaning, use numerical solutions as reference anchors, transform outputs so simple boundary conditions are automatically satisfied. After prediction, compute stress from displacement using known constitutive laws, check equilibrium residuals, compare against FEM at selected validation cases, enforce engineering constraints, and report uncertainty when the model leaves its trusted regime.</p>
-      <p>The figure below sketches a design loop. Drag the design variable to see the surrogate respond instantly; click to schedule an FEM verification when you suspect the surrogate is outside its trusted range. This is the seventh important idea: <strong>PINNs are most valuable when combined with existing physics knowledge, numerical methods, and engineering checks, not when used as a blind replacement for them</strong>.</p>
+      <p>So the real goal is not only to solve one case, but to search through a design space quickly while still keeping physics and verification in the loop. The black-box weakness of deep learning does not disappear, so good engineering practice is to make the network do only the part that actually benefits from learning. Domain knowledge should still carry as much of the burden as possible: normalize inputs, encode geometry meaning, separate boundary regions, use FEM solutions or teacher points as anchors when needed, and compute stress from displacement with known constitutive laws rather than asking the network to invent that structure for itself.</p>
+      <p>The figure below shows this hybrid idea. The surrogate gives an instant prediction as the design variable changes, but FEM still appears as the reference check when the design moves outside the surrogate's trusted region. This is the seventh important idea: <strong>PINNs are most valuable when combined with existing physics knowledge, numerical methods, and engineering checks, not when used as a blind replacement for them</strong>.</p>
     `,
   },
   {
@@ -205,16 +205,8 @@ export const TUTORIAL_SECTIONS = [
     title: "Closing Summary",
     figureFactory: null,
     body: `
-      <p>The conceptual path from numerical methods to PINNs can be summarized as follows.</p>
-      <ol class="lesson-figure-bullets">
-        <li>A known function form can be determined by solving for parameters. Three exact points pin one quadratic.</li>
-        <li>Real data are noisy, so modeling becomes a best-fit problem rather than an exact interpolation problem.</li>
-        <li>Machine learning generalizes this idea: choose a model, define a loss, train parameters, predict unseen values.</li>
-        <li>Deep learning chooses a very powerful model family. More capacity, but black-box behavior and harder training.</li>
-        <li>PINNs add physics to the training objective. The model also tries to satisfy PDE residuals and boundary conditions.</li>
-        <li>PINNs can fail when the physics loss is hard to optimize, the boundary conditions are indirect, the sampling is poor, or the model lacks useful anchors.</li>
-        <li>PINNs are most useful as part of a larger workflow — fast, differentiable, physics-aware surrogates that work with numerical methods, domain knowledge, and validation checks.</li>
-      </ol>
+      <p>This tutorial moved step by step from exact curve fitting, to noisy data fitting, to machine learning, to deep learning, and finally to physics-informed neural networks. The central idea is that a PINN is still a trainable model: it predicts outputs from inputs, learns through a loss function, and succeeds or fails depending on how clearly the training problem is posed.</p>
+      <p>What changes in a PINN is that physics and boundary conditions become part of that loss. That makes the model more physically informed, but it also makes training more delicate, especially when the supervision signal is indirect, as in Neumann loading. In practice, PINNs are often most useful not as blind replacements for FEM, but as fast, differentiable surrogates that work together with numerical solvers, domain knowledge, and careful validation.</p>
       <p class="lesson-tip"><strong>A PINN is still a model. It can be powerful, but it must be trained, checked, and interpreted with physics-aware engineering judgment.</strong></p>
       <p>When you are ready, mark the checkpoint complete to unlock <em>Preview Collocation Points</em>, where you start configuring the actual PINN run on the same geometry as the FEM baseline.</p>
     `,
