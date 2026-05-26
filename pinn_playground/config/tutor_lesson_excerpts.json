@@ -47,9 +47,9 @@
       "cellIds": ["pinn"],
       "checkpointIds": ["pinn-session"],
       "keywords": ["teacher", "supervision", "interior", "load", "patch"],
-      "summary": "Teacher points add sparse FEM displacement targets on top of the physics losses. They are most useful when placed near the failure mode the physics loss alone struggles to correct.",
-      "watch": "Interior teacher points can improve smooth displacement trends but may not fix localized stress peaks. Load-patch teacher points often help more because they anchor the region where traction enters the domain.",
-      "try": "Compare an interior-only teacher run against a load-patch-only teacher run using the same baseline settings."
+      "summary": "Teacher points add sparse FEM displacement targets on top of the physics losses. They help by adding direct displacement supervision, but the best placement should be tested rather than assumed.",
+      "watch": "Boundary or interior teacher points can stabilize the global displacement and stress field. Load-patch teacher points may still help locally, but they are not automatically the best first intervention for reducing whole-field error.",
+      "try": "Compare a boundary-only or interior-only teacher run against the baseline before escalating to mixed or load-patch guidance."
     },
     {
       "id": "adaptive-and-fourier",

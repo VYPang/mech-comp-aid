@@ -26,10 +26,34 @@
       "notes": "Validated as the reference bundle for later comparisons in the 2026-05-17 offline sweep. Normalization stays on because it was consistently part of every stronger run."
     },
     {
-      "id": "pinn-base-load-patch-boundary",
-      "title": "Base Frame Load-Patch + Boundary Guidance",
+      "id": "pinn-base-boundary-first",
+      "title": "Base Frame Boundary-First Guidance",
       "checkpointIds": ["pinn-session"],
-      "intent": "Use this when the current geometry is the base frame and the plain PINN is under-predicting stress near the top patch.",
+      "intent": "Use this as the first teacher-guided follow-up for the base frame when the plain PINN needs stronger global guidance after the baseline run.",
+      "controls": {
+        "samplingStrategy": "uniform",
+        "nDomain": "1200",
+        "nBoundary": "200",
+        "epochs": "2000",
+        "hiddenDim": "96",
+        "nHiddenLayers": "5",
+        "pdeWeight": "1.0",
+        "bcWeight": "5.0",
+        "normalizeInputs": true,
+        "fourierFeatures": false,
+        "fourierSigma": "1.0",
+        "teacherInterior": "0",
+        "teacherBoundary": "60",
+        "teacherLoadPatch": "0",
+        "teacherWeight": "10.0"
+      },
+      "notes": "Use this before any load-patch guidance on the base frame. Recent teacher-guidance comparisons showed that boundary-first supervision is a safer first intervention for reducing global error than starting with load-patch points."
+    },
+    {
+      "id": "pinn-base-mixed-boundary-load-patch",
+      "title": "Base Frame Mixed Boundary + Load-Patch Follow-Up",
+      "checkpointIds": ["pinn-session"],
+      "intent": "Escalate to this only after a boundary-first run when the base frame still under-predicts the local stress response near the top patch.",
       "controls": {
         "samplingStrategy": "uniform",
         "nDomain": "1200",
@@ -47,7 +71,7 @@
         "teacherLoadPatch": "12",
         "teacherWeight": "10.0"
       },
-      "notes": "Confirmed as the best base-frame recipe in the 2026-05-17 confirmation sweep. Load-patch-only guidance was worse, so keep some boundary anchors with the load-patch teachers."
+      "notes": "Keep this as a second-step mixed preset, not the first teacher recommendation. Load-patch-only guidance was worse than boundary-only in later heatmap comparisons, so patch teachers should be introduced only with a clear local-error reason."
     },
     {
       "id": "pinn-braced-interior-heavy",

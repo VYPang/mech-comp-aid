@@ -292,9 +292,9 @@ export function createTutor({ ui, runtimeState, progressStore }) {
   function cellLabelFor(cellId) {
     switch (cellId) {
       case "numerical":
-        return "Numerical Cell";
+        return "Finite Element Method Cell";
       case "pinn":
-        return "PINN Cell";
+        return "Physics-Informed Neural Network Cell";
       case "pinnTutorial":
         return "Tutorial Cell";
       default:

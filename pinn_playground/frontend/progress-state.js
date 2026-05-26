@@ -3,13 +3,13 @@ const STORAGE_KEY = "pinn-playground-checkpoint-shell-v3";
 export const checkpointGroups = [
   {
     id: "numerical",
-    title: "Numerical Cell",
+    title: "Finite Element Method Cell",
     description: "Work through one guided FEM session, then carry that baseline into the PINN.",
     checkpoints: [
       {
         id: "numerical-session",
         cellId: "numerical",
-        title: "Numerical Task Session",
+        title: "FEM Workspace",
         subtitle: "Define one FEM case, tune the mesh, solve it, then perturb material stiffness and solve again.",
         controlsTitle: "Numerical Workspace",
         controlsSubtitle: "Use one workspace for geometry, mesh preview, FEM solving, and reflection.",
@@ -46,7 +46,7 @@ export const checkpointGroups = [
   },
   {
     id: "pinn",
-    title: "PINN Cell",
+    title: "Physics-Informed Neural Network Cell",
     description: "Read the tutorial first, then preview, train, and compare the PINN in one workspace.",
     checkpoints: [
       {
