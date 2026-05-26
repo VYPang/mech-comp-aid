@@ -254,22 +254,23 @@ def _pinn_training_findings(config: TrainingConfig) -> list[DiagnosticFinding]:
                     code="teacher_enabled_without_points",
                     message="Teacher-guided mode is enabled but no teacher points are requested.",
                     target="pinn.teacher",
-                    suggested_updates={"pinn": {"teacher": {"n_load_patch": 12}}},
-                    highlight_keys=["pinn.teacher.n_load_patch"],
+                    suggested_updates={"pinn": {"teacher": {"n_boundary": 60}}},
+                    highlight_keys=["pinn.teacher.n_boundary"],
                 )
             )
-        elif config.teacher.n_load_patch == 0:
+        elif config.teacher.n_load_patch > 0 and (config.teacher.n_interior + config.teacher.n_boundary) == 0:
             findings.append(
                 DiagnosticFinding(
                     severity="info",
-                    code="teacher_no_load_patch_points",
+                    code="teacher_patch_only_points",
                     message=(
-                        "Teacher points are absent from the load patch. For this Neumann-loaded case, "
-                        "a few load-patch displacement anchors are often the most instructive intervention."
+                        "Teacher points are concentrated on the load patch only. Those points are direct displacement "
+                        "anchors, but patch-only guidance is often too localized to stabilize the global field. "
+                        "Add some boundary or interior anchors before increasing load-patch points further."
                     ),
-                    target="pinn.teacher.n_load_patch",
-                    suggested_updates={"pinn": {"teacher": {"n_load_patch": 12}}},
-                    highlight_keys=["pinn.teacher.n_load_patch"],
+                    target="pinn.teacher",
+                    suggested_updates={"pinn": {"teacher": {"n_boundary": 60}}},
+                    highlight_keys=["pinn.teacher.n_boundary"],
                 )
             )
 

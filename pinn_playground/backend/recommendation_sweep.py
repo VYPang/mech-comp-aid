@@ -141,15 +141,27 @@ def build_candidate_cases(epochs: int) -> list[CandidateCase]:
             cases.extend(
                 [
                     CandidateCase(
+                        name="base-boundary-only",
+                        geometry=geometry,
+                        description="Boundary-first teacher guidance for the base frame.",
+                        overrides=teacher_overrides(n_boundary=60),
+                    ),
+                    CandidateCase(
+                        name="base-interior-only",
+                        geometry=geometry,
+                        description="Interior-only teacher guidance for the base frame.",
+                        overrides=teacher_overrides(n_interior=60),
+                    ),
+                    CandidateCase(
                         name="base-load-patch-only",
                         geometry=geometry,
-                        description="Only load-patch teacher anchors; mirrors the current curated preset.",
+                        description="Only load-patch teacher anchors; useful as a comparison, but not the first teacher intervention.",
                         overrides=teacher_overrides(n_load_patch=12),
                     ),
                     CandidateCase(
                         name="base-load-patch-boundary",
                         geometry=geometry,
-                        description="User-guided base-frame recipe: load-patch plus boundary teacher points.",
+                        description="Mixed boundary plus load-patch teacher guidance for the base frame.",
                         overrides=teacher_overrides(n_boundary=60, n_load_patch=12),
                     ),
                     CandidateCase(
