@@ -1,6 +1,7 @@
 import { fetchFemPreview, fetchFemSolve } from "./api.js?v=checkpoint-shell-15";
 import { buildFemConfig, DEFAULT_FEM_CONTROLS, mergeControlValues, mergeSharedStructuralValues, pickSharedStructuralValues, readFemControlValues } from "./control-config.js?v=checkpoint-shell-15";
 import { buildNumericalGuideSections } from "./guide-content.js?v=checkpoint-shell-15";
+import { buildNumericalTaskChecks } from "./numerical-task-progress.js?v=checkpoint-shell-17";
 import { renderFemBoundaryPlot, renderFemDeformedPlot, renderFemMeshPlot, renderNotePlot, renderStressHeatmap } from "./plots.js?v=checkpoint-shell-15";
 
 const NUMERICAL_CHECKPOINT_ID = "numerical-session";
@@ -289,13 +290,7 @@ export function createNumericalCell({ ui, runtimeState, shell }) {
       state.taskState.youngTargetReached = true;
     }
 
-    const taskChecks = [
-      { id: "define-geometry", complete: state.taskState.geometryTouched },
-      { id: "define-loading-patch", complete: state.taskState.loadingPatchTouched },
-      { id: "set-mesh-density", complete: state.taskState.meshTargetReached },
-      { id: "run-baseline-result", complete: state.taskState.solvedAtTargetCells },
-      { id: "change-young-run-result", complete: state.taskState.solvedAtTargetYoung },
-    ];
+    const taskChecks = buildNumericalTaskChecks(state.taskState);
     const activeIndex = taskChecks.findIndex((task) => !task.complete);
     const allComplete = activeIndex === -1;
     const tasks = Object.fromEntries(

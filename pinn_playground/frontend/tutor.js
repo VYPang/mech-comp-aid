@@ -78,6 +78,9 @@ export function createTutor({ ui, runtimeState, progressStore }) {
       close();
     }
   });
+  window.addEventListener("pinn:tutor-open", (event) => {
+    openWithPrompt(event.detail?.prompt ?? "");
+  });
   document.addEventListener("pinn:tutorial-context-change", () => renderContextLabel());
   ui.controlsForm?.addEventListener("input", () => syncAppliedHighlights());
   ui.controlsForm?.addEventListener("change", () => syncAppliedHighlights());
@@ -111,8 +114,8 @@ export function createTutor({ ui, runtimeState, progressStore }) {
     launcher.className = "tutor-launcher";
     launcher.innerHTML = `
       <span class="tutor-launcher-dot" aria-hidden="true"></span>
-      <span class="tutor-launcher-label">Open Tutor</span>
-      <span class="tutor-launcher-hint">Ask · Agent</span>
+      <span class="tutor-launcher-label">Ask Tutor</span>
+      <span class="tutor-launcher-hint">Ask / Agent</span>
     `;
 
     const backdrop = document.createElement("div");
@@ -207,6 +210,14 @@ export function createTutor({ ui, runtimeState, progressStore }) {
     renderContextLabel();
     void refreshTutorStatus();
     dom.input.focus();
+  }
+
+  function openWithPrompt(prompt) {
+    open();
+    if (prompt && !dom.input.value.trim()) {
+      dom.input.value = prompt;
+      dom.input.select();
+    }
   }
 
   function close() {

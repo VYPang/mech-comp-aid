@@ -26,13 +26,8 @@ export const checkpointGroups = [
           },
           {
             id: "set-mesh-density",
-            title: "Set Structured Cells per Side to 80",
-            question: "What is affected in the plot when you change the mesh density?",
-          },
-          {
-            id: "run-baseline-result",
-            title: "Run the FEM",
-            question: "After the solve, do the largest deformation and stress regions appear in the same place?",
+            title: "Set Structured Cells per Side to 80 & Run",
+            question: "After the solve, what is affected by mesh density and where do deformation and stress concentrate?",
           },
           {
             id: "change-young-run-result",

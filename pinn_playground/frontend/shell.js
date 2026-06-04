@@ -1,9 +1,10 @@
 import { canAdvanceCheckpoint, getCompletionMessage } from "./checkpoint-rules.js?v=checkpoint-shell-15";
 import { installDiagnosticsDebugHook } from "./diagnostics.js?v=checkpoint-shell-15";
-import { createNumericalCell } from "./numerical-cell.js?v=checkpoint-shell-15";
+import { createNumericalCell } from "./numerical-cell.js?v=checkpoint-shell-17";
 import { createPinnCell } from "./pinn-cell.js?v=checkpoint-shell-15";
 import { createTutorialCell } from "./tutorial-cell.js?v=checkpoint-shell-15";
 import { initializeShellPlots } from "./plots.js?v=checkpoint-shell-15";
+import { getActiveTaskGuidance, getTaskGuidance, summarizeTaskProgress } from "./task-guidance.js?v=checkpoint-shell-17";
 
 export function createAppShell({ ui, progressStore }) {
   const runtimeState = {
@@ -71,6 +72,8 @@ export function createAppShell({ ui, progressStore }) {
   installDiagnosticsDebugHook({ runtimeState, progressStore });
 
   let mountedCheckpointId = null;
+  const selectedTaskIds = {};
+  const explanationOpenByTask = {};
 
   initializeShellPlots({
     left: ui.leftPlot,
@@ -282,23 +285,194 @@ export function createAppShell({ ui, progressStore }) {
     }
 
     const taskProgress = runtimeState.taskProgress?.[checkpoint.id];
-    ui.requirementsList.innerHTML = tasks
-      .map((task, index) => {
-        const status = taskProgress?.tasks?.[task.id]?.status ?? (index === 0 ? "active" : "locked");
-        return `
-          <li class="task-item task-item-${status}">
-            <span class="task-marker">${index + 1}</span>
-            <span class="task-body">
-              <span class="task-title-row">
-                <span class="task-title">${task.title}</span>
-                <span class="task-status task-status-${status}">${taskStatusLabel(status)}</span>
-              </span>
-              <span class="task-question">${task.question}</span>
-            </span>
-          </li>
-        `;
-      })
+    const summary = summarizeTaskProgress(checkpoint, taskProgress);
+    const active = getDisplayTaskGuidance(checkpoint, taskProgress, summary);
+    if (!active) {
+      ui.requirementsList.innerHTML = "";
+      return;
+    }
+
+    ui.requirementsList.innerHTML = `
+      <li class="active-task-card">
+        ${renderActiveTaskCard(checkpoint, active, summary)}
+      </li>
+      <li class="task-progress-compact" aria-label="Checkpoint task progress">
+        ${renderTaskProgressCompact(summary, active.task.id)}
+      </li>
+    `;
+    bindGuidedTaskActions(checkpoint, summary);
+  }
+
+  function getDisplayTaskGuidance(checkpoint, taskProgress, summary) {
+    const active = getActiveTaskGuidance(checkpoint, taskProgress);
+    if (!active) return null;
+    const selectedTaskId = selectedTaskIds[checkpoint.id];
+    const selectedItem = summary.items.find((item) => item.id === selectedTaskId && item.selectable);
+    if (!selectedItem) {
+      selectedTaskIds[checkpoint.id] = active.task.id;
+      return active;
+    }
+    const tasks = Array.isArray(checkpoint.tasks) ? checkpoint.tasks : [];
+    const selectedIndex = tasks.findIndex((task) => task.id === selectedItem.id);
+    const selectedTask = tasks[selectedIndex];
+    if (!selectedTask) {
+      selectedTaskIds[checkpoint.id] = active.task.id;
+      return active;
+    }
+    return {
+      task: selectedTask,
+      index: selectedIndex + 1,
+      total: tasks.length,
+      guidance: getTaskGuidance(selectedTask.id),
+      status: selectedItem.status,
+    };
+  }
+
+  function renderActiveTaskCard(checkpoint, active, summary) {
+    const guidance = active.guidance;
+    const actions = [guidance.primaryAction, ...(guidance.secondaryActions ?? [])]
+      .filter(Boolean);
+    const primaryAction = actions[0];
+    const secondaryActions = actions.slice(1);
+    const detailKey = taskDetailKey(checkpoint.id, active.task.id);
+    const isExplanationOpen = Boolean(explanationOpenByTask[detailKey]);
+    return `
+      <div class="active-task-topline">
+        <span class="active-task-kicker">Current task</span>
+        <span class="active-task-count">${summary.completedCount}/${summary.totalCount} complete</span>
+      </div>
+      <div class="active-task-title-row">
+        <span class="active-task-number">${active.index}</span>
+        <span class="active-task-title">${escapeHtml(active.task.title)}</span>
+      </div>
+      <p class="active-task-instruction">${escapeHtml(guidance.shortInstruction)}</p>
+      <div class="active-task-actions">
+        ${primaryAction ? renderTaskActionButton(primaryAction, 0, true) : ""}
+        ${secondaryActions.map((action, offset) => renderTaskActionButton(action, offset + 1, false)).join("")}
+      </div>
+      <details class="active-task-details" data-task-explanation-key="${escapeHtml(detailKey)}" ${isExplanationOpen ? "open" : ""}>
+        <summary>Explanation</summary>
+        <p class="active-task-explanation">${escapeHtml(guidance.explanation)}</p>
+      </details>
+    `;
+  }
+
+  function renderTaskActionButton(action, index, primary) {
+    const className = primary ? "task-action-button task-action-button-primary" : "task-action-button";
+    return `
+      <button type="button" class="${className}" data-guided-task-action="${index}">
+        ${escapeHtml(action.label)}
+      </button>
+    `;
+  }
+
+  function renderTaskProgressCompact(summary, selectedTaskId) {
+    return summary.items
+      .map((item, index) => `
+        <button
+          type="button"
+          class="task-dot task-dot-${item.status} ${item.id === selectedTaskId ? "task-dot-selected" : ""}"
+          title="${escapeHtml(item.title)}"
+          data-task-progress-id="${escapeHtml(item.id)}"
+          ${item.selectable ? "" : "disabled"}
+        >
+          <span class="task-dot-index">${index + 1}</span>
+          <span class="task-dot-label">${escapeHtml(taskStatusLabel(item.status))}</span>
+        </button>
+      `)
       .join("");
+  }
+
+  function bindGuidedTaskActions(checkpoint, summary) {
+    const active = getActiveTaskGuidance(checkpoint, runtimeState.taskProgress?.[checkpoint.id]);
+    if (!active) return;
+    const selected = getDisplayTaskGuidance(checkpoint, runtimeState.taskProgress?.[checkpoint.id], summary);
+    const actions = [selected.guidance.primaryAction, ...(selected.guidance.secondaryActions ?? [])]
+      .filter(Boolean);
+    ui.requirementsList.querySelectorAll("[data-guided-task-action]").forEach((button) => {
+      button.addEventListener("click", () => {
+        const action = actions[Number(button.dataset.guidedTaskAction)];
+        if (action) {
+          runGuidedTaskAction(action);
+        }
+      });
+    });
+    ui.requirementsList.querySelectorAll("[data-task-explanation-key]").forEach((details) => {
+      details.addEventListener("toggle", () => {
+        explanationOpenByTask[details.dataset.taskExplanationKey] = details.open;
+      });
+    });
+    ui.requirementsList.querySelectorAll("[data-task-progress-id]").forEach((button) => {
+      button.addEventListener("click", () => {
+        const taskId = button.dataset.taskProgressId;
+        if (!taskId || button.disabled) return;
+        selectedTaskIds[checkpoint.id] = taskId;
+        refreshChrome();
+      });
+    });
+  }
+
+  function runGuidedTaskAction(action) {
+    const region = action.regionSelector ? document.querySelector(action.regionSelector) : null;
+    const target = action.targetSelector ? document.querySelector(action.targetSelector) : null;
+    const secondary = action.secondarySelector ? document.querySelector(action.secondarySelector) : null;
+
+    if (target) {
+      openParentDetails(target);
+    }
+    if (secondary) {
+      openParentDetails(secondary);
+    }
+
+    if (action.type === "open-tab" && target instanceof HTMLButtonElement) {
+      target.click();
+    }
+
+    const scrollTarget = action.type === "open-tab"
+      ? (region ?? target ?? secondary)
+      : (target ?? secondary ?? region);
+    if (scrollTarget) {
+      scrollTarget.scrollIntoView({
+        behavior: prefersReducedMotion() ? "auto" : "smooth",
+        block: "center",
+      });
+    }
+
+    window.setTimeout(() => {
+      if (action.type === "open-tab") {
+        highlightGuidedTarget(region);
+      }
+      highlightGuidedTarget(target);
+      highlightGuidedTarget(secondary);
+    }, action.type === "open-tab" ? 120 : 0);
+  }
+
+  function openParentDetails(element) {
+    let current = element?.parentElement;
+    while (current) {
+      if (current.tagName === "DETAILS") {
+        current.open = true;
+      }
+      current = current.parentElement;
+    }
+  }
+
+  function highlightGuidedTarget(element) {
+    if (!element) return;
+    element.classList.remove("guided-task-highlight");
+    void element.offsetWidth;
+    element.classList.add("guided-task-highlight");
+    window.setTimeout(() => {
+      element.classList.remove("guided-task-highlight");
+    }, 3600);
+  }
+
+  function prefersReducedMotion() {
+    return window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches ?? false;
+  }
+
+  function taskDetailKey(checkpointId, taskId) {
+    return `${checkpointId}:${taskId}`;
   }
 
   function updateNextButton(checkpoint, state) {
@@ -331,6 +505,16 @@ function taskStatusLabel(status) {
     default:
       return "Locked";
   }
+}
+
+function escapeHtml(value) {
+  if (value === null || value === undefined) return "";
+  return String(value)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
 }
 
 function statusPillClass(tone) {
