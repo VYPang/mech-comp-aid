@@ -1,6 +1,6 @@
-import { createProgressStore } from "./progress-state.js?v=checkpoint-shell-15";
-import { createAppShell } from "./shell.js?v=checkpoint-shell-23";
-import { createTutor } from "./tutor.js?v=checkpoint-shell-23";
+import { createProgressStore } from "./progress-state.js?v=checkpoint-shell-24";
+import { createAppShell } from "./shell.js?v=checkpoint-shell-25";
+import { createTutor } from "./tutor.js?v=checkpoint-shell-25";
 
 function bootstrap() {
   const ui = {
@@ -23,11 +23,8 @@ function bootstrap() {
     setupPreviewTabs: document.getElementById("setup-preview-tabs"),
     setupPreviewPlot: "setup-preview-plot",
     activeTaskPanel: document.getElementById("active-task-panel"),
-    utilityPanel: document.getElementById("utility-panel"),
     coachSubtitle: document.getElementById("coach-subtitle"),
     requirementsList: document.getElementById("requirements-list"),
-    guideBox: document.getElementById("guide-box"),
-    nextStepButton: document.getElementById("next-step-button"),
     resetProgressButton: document.getElementById("reset-progress-button"),
     leftPlot: "left-plot",
     leftPlotTitle: document.getElementById("left-plot-title"),

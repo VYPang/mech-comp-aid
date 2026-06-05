@@ -1,8 +1,8 @@
-import { canAdvanceCheckpoint, getCompletionMessage } from "./checkpoint-rules.js?v=checkpoint-shell-15";
+import { canAdvanceCheckpoint, getCompletionMessage } from "./checkpoint-rules.js?v=checkpoint-shell-24";
 import { installDiagnosticsDebugHook } from "./diagnostics.js?v=checkpoint-shell-15";
 import { createNumericalCell } from "./numerical-cell.js?v=checkpoint-shell-20";
 import { createPinnCell } from "./pinn-cell.js?v=checkpoint-shell-20";
-import { createTutorialCell } from "./tutorial-cell.js?v=checkpoint-shell-15";
+import { createTutorialCell } from "./tutorial-cell.js?v=checkpoint-shell-25";
 import { initializeShellPlots } from "./plots.js?v=checkpoint-shell-20";
 import { getActiveTaskGuidance, getTaskGuidance, summarizeTaskProgress } from "./task-guidance.js?v=checkpoint-shell-17";
 
@@ -10,6 +10,7 @@ export function createAppShell({ ui, progressStore }) {
   const runtimeState = {
     checkpointEvents: {},
     taskProgress: {},
+    tutorialProgress: {},
     sharedStructuralControls: null,
     fem: {},
     pinn: {},
@@ -31,10 +32,14 @@ export function createAppShell({ ui, progressStore }) {
 
   const shellHelpers = {
     setGuide(html) {
-      ui.guideBox.innerHTML = html;
+      if (ui.guideBox) {
+        ui.guideBox.innerHTML = html;
+      }
     },
     setGuideSections(sections) {
-      ui.guideBox.innerHTML = renderGuideSections(sections);
+      if (ui.guideBox) {
+        ui.guideBox.innerHTML = renderGuideSections(sections);
+      }
     },
     setStatus(text, options = {}) {
       const tone = options.tone ?? "idle";
@@ -125,21 +130,10 @@ export function createAppShell({ ui, progressStore }) {
     bottom: ui.bottomPlot,
   });
 
-  ui.nextStepButton.addEventListener("click", () => {
-    const state = progressStore.getState();
-    const checkpoint = progressStore.getActiveCheckpoint();
-    if (!checkpoint || !canAdvanceCheckpoint(checkpoint, state, runtimeState)) {
+  ui.resetProgressButton.addEventListener("click", () => {
+    if (!window.confirm("Reset the learning path and clear all current progress?")) {
       return;
     }
-    runtimeState.checkpointEvents[checkpoint.id] = {
-      ...runtimeState.checkpointEvents[checkpoint.id],
-      status: "success",
-      completedManually: true,
-    };
-    progressStore.markCheckpointComplete(checkpoint.id);
-  });
-
-  ui.resetProgressButton.addEventListener("click", () => {
     if (mountedCheckpointId) {
       const checkpoint = progressStore.getCheckpoint(mountedCheckpointId);
       if (checkpoint) {
@@ -150,6 +144,7 @@ export function createAppShell({ ui, progressStore }) {
     Object.values(cells).forEach((cell) => cell.reset?.());
     runtimeState.checkpointEvents = {};
     runtimeState.taskProgress = {};
+    runtimeState.tutorialProgress = {};
     runtimeState.sharedStructuralControls = null;
     runtimeState.fem = {};
     runtimeState.pinn = {};
@@ -176,6 +171,10 @@ export function createAppShell({ ui, progressStore }) {
 
     refreshChrome(state, checkpoint);
 
+    if (mountedCheckpointId === checkpoint.id) {
+      return;
+    }
+
     if (mountedCheckpointId) {
       const previousCheckpoint = progressStore.getCheckpoint(mountedCheckpointId);
       if (previousCheckpoint) {
@@ -196,7 +195,7 @@ export function createAppShell({ ui, progressStore }) {
     renderLearningPath(state, checkpoint.id);
     renderWorkspaceChrome(checkpoint);
     renderCoachPanel(checkpoint, state);
-    updateNextButton(checkpoint, state);
+    maybeAutoCompleteCheckpoint(checkpoint, state);
   }
 
   function renderLearningPath(state, activeCheckpointId) {
@@ -291,9 +290,6 @@ export function createAppShell({ ui, progressStore }) {
 
   function renderCoachPanel(checkpoint) {
     const tasksBlock = ui.activeTaskPanel ?? ui.requirementsList?.parentElement;
-    if (ui.guideBox) {
-      ui.guideBox.style.display = checkpoint.cellId === "pinnTutorial" ? "" : "none";
-    }
     if (tasksBlock) {
       tasksBlock.style.display = checkpoint.cellId === "pinnTutorial" ? "none" : "";
     }
@@ -508,24 +504,15 @@ export function createAppShell({ ui, progressStore }) {
     return `${checkpointId}:${taskId}`;
   }
 
-  function updateNextButton(checkpoint, state) {
+  function maybeAutoCompleteCheckpoint(checkpoint, state) {
+    if (state.checkpoints[checkpoint.id]?.completed) {
+      return;
+    }
     const canAdvance = canAdvanceCheckpoint(checkpoint, state, runtimeState);
-    const isFinal = progressStore.orderedCheckpointIds.at(-1) === checkpoint.id;
-    const isCompleted = state.checkpoints[checkpoint.id]?.completed;
-
-    ui.nextStepButton.disabled = isCompleted && isFinal ? true : !canAdvance;
-    ui.nextStepButton.classList.toggle("opacity-60", ui.nextStepButton.disabled);
-    ui.nextStepButton.classList.toggle("cursor-not-allowed", ui.nextStepButton.disabled);
-    ui.nextStepButton.textContent =
-      isCompleted && isFinal
-        ? "Learning path completed"
-        : !canAdvance && checkpoint.completeMode === "task_list"
-          ? "Finish the task list first"
-        : !canAdvance && checkpoint.completeMode === "api_success"
-          ? "Complete the required run first"
-        : isFinal
-          ? "Mark learning path complete"
-          : "Mark complete and continue";
+    if (!canAdvance) {
+      return;
+    }
+    progressStore.markCheckpointComplete(checkpoint.id, { activateNext: false });
   }
 }
 

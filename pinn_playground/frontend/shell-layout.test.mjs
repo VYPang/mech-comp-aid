@@ -10,7 +10,8 @@ const indexHtml = readFileSync(join(here, "index.html"), "utf8");
 test("desktop shell exposes a collapsible learning rail and active task strip", () => {
   assert.doesNotMatch(indexHtml, /id="learning-path-toggle"/);
   assert.match(indexHtml, /id="active-task-panel"/);
-  assert.match(indexHtml, /id="utility-panel"/);
-  assert.match(indexHtml, /<aside id="learning-path-aside"[\s\S]*id="utility-panel"/);
+  assert.doesNotMatch(indexHtml, /id="utility-panel"/);
+  assert.doesNotMatch(indexHtml, /id="next-step-button"/);
+  assert.match(indexHtml, /id="reset-progress-button"/);
   assert.doesNotMatch(indexHtml, /id="workspace-title"/);
 });

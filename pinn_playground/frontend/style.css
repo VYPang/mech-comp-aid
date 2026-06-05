@@ -1052,6 +1052,10 @@ body {
   border-color: rgb(34 211 238 / 0.55);
   color: rgb(165 243 252);
 }
+.lesson-section-tab:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
 .lesson-section-tab-active {
   background: rgb(8 47 73 / 0.7);
   border-color: rgb(34 211 238);

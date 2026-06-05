@@ -11,7 +11,7 @@
     <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js"></script>
     <script defer src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
     <script defer src="https://cdn.jsdelivr.net/npm/dompurify@3.2.6/dist/purify.min.js"></script>
-    <link rel="stylesheet" href="/style.css?v=checkpoint-shell-23" />
+    <link rel="stylesheet" href="/style.css?v=checkpoint-shell-24" />
   </head>
   <body class="min-h-screen bg-slate-950 text-slate-100">
     <div class="mx-auto max-w-[1600px] px-4 py-5 lg:px-6">
@@ -58,21 +58,13 @@
             </div>
           </section>
 
-          <section id="utility-panel" class="rounded-2xl border border-slate-800 bg-slate-900/80 p-5 shadow-lg">
-            <h2 class="text-lg font-semibold text-white">Progress & Help</h2>
-            <div id="guide-box" class="mt-4 rounded-xl border border-cyan-500/30 bg-cyan-500/10 p-4 text-sm leading-6 text-slate-200">
-              Loading the checkpoint shell…
-            </div>
-
-            <div class="mt-4 space-y-3">
-              <button id="next-step-button" type="button" class="w-full rounded-xl bg-cyan-500 px-4 py-3 font-semibold text-slate-950 transition hover:bg-cyan-400">
-                Mark complete and continue
-              </button>
-              <button id="reset-progress-button" type="button" class="w-full rounded-xl border border-slate-600 bg-slate-900 px-4 py-3 font-semibold text-slate-200 transition hover:border-slate-500 hover:bg-slate-800">
-                Reset learning path
-              </button>
-            </div>
-          </section>
+          <button
+            id="reset-progress-button"
+            type="button"
+            class="w-full rounded-xl border border-rose-500/45 bg-rose-950/40 px-4 py-3 font-semibold text-rose-100 transition hover:border-rose-400 hover:bg-rose-900/55"
+          >
+            Reset learning path
+          </button>
         </aside>
 
         <section class="space-y-5">
@@ -145,6 +137,6 @@
       </main>
     </div>
 
-    <script type="module" src="/app.js?v=checkpoint-shell-23"></script>
+    <script type="module" src="/app.js?v=checkpoint-shell-25"></script>
   </body>
 </html>

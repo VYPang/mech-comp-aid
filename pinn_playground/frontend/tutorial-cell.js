@@ -3,14 +3,35 @@
 // the user is on the pinn-tutorial checkpoint.
 import { TUTORIAL_INTRO, TUTORIAL_SECTIONS } from "./lessons/tutorial-content.js?v=checkpoint-shell-15";
 
+export function advanceTutorialProgress({ sectionIds, sectionId, unlockedCount, viewedSectionIds }) {
+  const sectionIndex = sectionIds.findIndex((entry) => entry === sectionId);
+  if (sectionIndex < 0) {
+    return {
+      unlockedCount,
+      viewedSectionIds: [...new Set(viewedSectionIds)],
+    };
+  }
+
+  return {
+    unlockedCount: Math.max(
+      unlockedCount,
+      Math.min(sectionIds.length, sectionIndex + 2),
+    ),
+    viewedSectionIds: [...new Set([...viewedSectionIds, sectionId])],
+  };
+}
+
 export function createTutorialCell({ ui, runtimeState, shell }) {
   const state = {
     activeSectionId: TUTORIAL_SECTIONS[0].id,
     figureInstances: new Map(),
     container: null,
+    unlockedCount: 1,
+    viewedSectionIds: new Set([TUTORIAL_SECTIONS[0].id]),
   };
 
   function enter(checkpoint) {
+    ensureTutorialProgress();
     syncRuntimeTutorialContext();
     shell.setBottomPanelVisible(false);
     shell.setSetupPreviewVisible(false);
@@ -18,7 +39,7 @@ export function createTutorialCell({ ui, runtimeState, shell }) {
     shell.setStatus("Reading the tutorial", {
       tone: "preview",
       pill: "Tutorial",
-      detail: "Work through the seven sections, then mark the checkpoint complete.",
+      detail: "Sections unlock in order. Open each one to unlock the next and gain access to the PINN workspace.",
     });
     shell.setControlsSummary("Use the section tabs below to jump between tutorial sections.");
     shell.setPlotMeta({
@@ -29,16 +50,6 @@ export function createTutorialCell({ ui, runtimeState, shell }) {
       bottomTitle: "",
       bottomSummary: "",
     });
-    shell.setGuide(`
-      <div class="lesson-coach">
-        <p><strong>How to use this tutorial:</strong></p>
-        <ul>
-          <li>Read the section text first.</li>
-          <li>Try the figure controls — sliders, toggles, draggable points.</li>
-          <li>When you finish all seven sections, click "Mark complete and continue".</li>
-        </ul>
-      </div>
-    `);
     renderControls();
     renderTutorialBody();
   }
@@ -75,8 +86,13 @@ export function createTutorialCell({ ui, runtimeState, shell }) {
   function renderControls() {
     ui.controlsForm.innerHTML = `
       <div class="lesson-section-tabs" data-role="tabs">
-        ${TUTORIAL_SECTIONS.map((section) => `
-          <button type="button" class="lesson-section-tab" data-section-id="${section.id}">
+        ${TUTORIAL_SECTIONS.map((section, index) => `
+          <button
+            type="button"
+            class="lesson-section-tab"
+            data-section-id="${section.id}"
+            ${index < state.unlockedCount ? "" : "disabled"}
+          >
             ${section.title}
           </button>
         `).join("")}
@@ -101,6 +117,7 @@ export function createTutorialCell({ ui, runtimeState, shell }) {
   function renderTutorialBody() {
     destroyFigures();
     const activeSection = TUTORIAL_SECTIONS.find((section) => section.id === state.activeSectionId) ?? TUTORIAL_SECTIONS[0];
+    markSectionVisited(activeSection.id);
     syncRuntimeTutorialContext(activeSection);
     let container = state.container;
     if (!container) {
@@ -157,7 +174,43 @@ export function createTutorialCell({ ui, runtimeState, shell }) {
       activeSectionIndex: sectionIndex >= 0 ? sectionIndex + 1 : null,
       sectionCount: TUTORIAL_SECTIONS.length,
     };
+    runtimeState.tutorialProgress = runtimeState.tutorialProgress ?? {};
+    runtimeState.tutorialProgress["pinn-tutorial"] = {
+      allComplete: state.viewedSectionIds.size === TUTORIAL_SECTIONS.length,
+      currentIndex: sectionIndex >= 0 ? sectionIndex + 1 : 1,
+      currentTitle: activeSection.title,
+      sectionCount: TUTORIAL_SECTIONS.length,
+      unlockedCount: state.unlockedCount,
+      viewedSectionIds: [...state.viewedSectionIds],
+      updatedAt: new Date().toISOString(),
+    };
+    shell.refreshProgress();
     document.dispatchEvent(new CustomEvent("pinn:tutorial-context-change"));
+  }
+
+  function ensureTutorialProgress() {
+    const progress = runtimeState.tutorialProgress?.["pinn-tutorial"];
+    if (!progress) {
+      return;
+    }
+    state.unlockedCount = Math.max(1, Math.min(TUTORIAL_SECTIONS.length, Number(progress.unlockedCount) || 1));
+    state.viewedSectionIds = new Set(progress.viewedSectionIds ?? [TUTORIAL_SECTIONS[0].id]);
+    if (!state.viewedSectionIds.size) {
+      state.viewedSectionIds.add(TUTORIAL_SECTIONS[0].id);
+    }
+  }
+
+  function markSectionVisited(sectionId) {
+    const next = advanceTutorialProgress({
+      sectionIds: TUTORIAL_SECTIONS.map((entry) => entry.id),
+      sectionId,
+      unlockedCount: state.unlockedCount,
+      viewedSectionIds: [...state.viewedSectionIds],
+    });
+    state.unlockedCount = next.unlockedCount;
+    state.viewedSectionIds = new Set(next.viewedSectionIds);
+    renderControls();
+    updateActiveTab();
   }
 
   return { enter, leave };

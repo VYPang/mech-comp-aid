@@ -55,9 +55,9 @@ export const checkpointGroups = [
         requirements: [
           "Read each tutorial section.",
           "Try the interactive figure controls.",
-          "Continue when the seven core ideas feel concrete.",
+          "Advance through the seven sections in order.",
         ],
-        completeMode: "manual",
+        completeMode: "tutorial_sequence",
       },
       {
         id: "pinn-session",
@@ -210,8 +210,11 @@ export function createProgressStore() {
     emit();
   }
 
-  function markCheckpointComplete(id) {
+  function markCheckpointComplete(id, options = {}) {
     if (!checkpointsById.has(id)) {
+      return;
+    }
+    if (state.checkpoints[id].completed) {
       return;
     }
 
@@ -221,7 +224,9 @@ export function createProgressStore() {
     const nextId = currentIndex >= 0 ? orderedCheckpointIds[currentIndex + 1] : null;
     if (nextId) {
       state.checkpoints[nextId].unlocked = true;
-      state.activeCheckpointId = nextId;
+      if (options.activateNext) {
+        state.activeCheckpointId = nextId;
+      }
     }
     emit();
   }

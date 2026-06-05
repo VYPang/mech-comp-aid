@@ -3,6 +3,7 @@ export const COMPLETE_MODES = {
   API_SUCCESS: "api_success",
   RULE: "rule",
   TASK_LIST: "task_list",
+  TUTORIAL_SEQUENCE: "tutorial_sequence",
 };
 
 export function canAdvanceCheckpoint(checkpoint, progressState, runtimeState) {
@@ -20,6 +21,8 @@ export function canAdvanceCheckpoint(checkpoint, progressState, runtimeState) {
       return evaluateCheckpointRules(checkpoint, runtimeState);
     case COMPLETE_MODES.TASK_LIST:
       return Boolean(runtimeState.taskProgress?.[checkpoint.id]?.allComplete);
+    case COMPLETE_MODES.TUTORIAL_SEQUENCE:
+      return Boolean(runtimeState.tutorialProgress?.[checkpoint.id]?.allComplete);
     default:
       return false;
   }
@@ -37,6 +40,8 @@ export function getCompletionMessage(checkpoint, runtimeState) {
       return "This checkpoint will use rule-based completion in a later milestone.";
     case COMPLETE_MODES.TASK_LIST:
       return getTaskListCompletionMessage(checkpoint, runtimeState);
+    case COMPLETE_MODES.TUTORIAL_SEQUENCE:
+      return getTutorialCompletionMessage(checkpoint, runtimeState);
     default:
       return "Completion state is unavailable.";
   }
@@ -61,6 +66,17 @@ function getTaskListCompletionMessage(checkpoint, runtimeState) {
   }
 
   return `Task ${activeIndex + 1} of ${tasks.length}: ${activeTask.title}.`;
+}
+
+function getTutorialCompletionMessage(checkpoint, runtimeState) {
+  const progress = runtimeState.tutorialProgress?.[checkpoint.id];
+  if (!progress) {
+    return "Start with section 1 to unlock the tutorial progressively.";
+  }
+  if (progress.allComplete) {
+    return "Tutorial complete. The PINN workspace is now unlocked.";
+  }
+  return `Tutorial section ${progress.currentIndex} of ${progress.sectionCount}: ${progress.currentTitle}.`;
 }
 
 export function evaluateCheckpointRules(checkpoint, runtimeState) {
