@@ -1,9 +1,9 @@
 import { canAdvanceCheckpoint, getCompletionMessage } from "./checkpoint-rules.js?v=checkpoint-shell-15";
 import { installDiagnosticsDebugHook } from "./diagnostics.js?v=checkpoint-shell-15";
-import { createNumericalCell } from "./numerical-cell.js?v=checkpoint-shell-17";
-import { createPinnCell } from "./pinn-cell.js?v=checkpoint-shell-15";
+import { createNumericalCell } from "./numerical-cell.js?v=checkpoint-shell-20";
+import { createPinnCell } from "./pinn-cell.js?v=checkpoint-shell-20";
 import { createTutorialCell } from "./tutorial-cell.js?v=checkpoint-shell-15";
-import { initializeShellPlots } from "./plots.js?v=checkpoint-shell-15";
+import { initializeShellPlots } from "./plots.js?v=checkpoint-shell-20";
 import { getActiveTaskGuidance, getTaskGuidance, summarizeTaskProgress } from "./task-guidance.js?v=checkpoint-shell-17";
 
 export function createAppShell({ ui, progressStore }) {
@@ -57,6 +57,50 @@ export function createAppShell({ ui, progressStore }) {
     setBottomPanelVisible(visible) {
       const panel = document.getElementById("bottom-panel");
       if (panel) panel.style.display = visible ? "" : "none";
+    },
+    scrollResultsIntoView() {
+      const target = document.getElementById(ui.leftPlot)?.closest("section");
+      target?.scrollIntoView({
+        behavior: prefersReducedMotion() ? "auto" : "smooth",
+        block: "start",
+      });
+    },
+    setSetupPreviewVisible(visible) {
+      if (ui.setupPreviewShell) {
+        ui.setupPreviewShell.style.display = visible ? "" : "none";
+        ui.setupPreviewShell.parentElement?.classList.toggle("workspace-setup-grid-preview-hidden", !visible);
+      }
+    },
+    setSetupPreviewMeta(meta) {
+      if (ui.setupPreviewTitle && meta.title !== undefined) {
+        ui.setupPreviewTitle.textContent = meta.title;
+      }
+      if (ui.setupPreviewSummary && meta.summary !== undefined) {
+        ui.setupPreviewSummary.textContent = meta.summary;
+      }
+    },
+    setSetupPreviewTabs(modes, activeModeId, onSelect) {
+      if (!ui.setupPreviewTabs) return;
+      if (!Array.isArray(modes) || modes.length <= 1) {
+        ui.setupPreviewTabs.innerHTML = "";
+        return;
+      }
+      ui.setupPreviewTabs.innerHTML = modes
+        .map((mode) => `
+          <button
+            type="button"
+            class="setup-preview-tab ${mode.id === activeModeId ? "setup-preview-tab-active" : ""}"
+            data-setup-preview-mode="${escapeHtml(mode.id)}"
+          >
+            ${escapeHtml(mode.label)}
+          </button>
+        `)
+        .join("");
+      ui.setupPreviewTabs.querySelectorAll("[data-setup-preview-mode]").forEach((button) => {
+        button.addEventListener("click", () => {
+          onSelect?.(button.dataset.setupPreviewMode);
+        });
+      });
     },
     refreshProgress() {
       refreshChrome();

@@ -11,7 +11,7 @@
     <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js"></script>
     <script defer src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
     <script defer src="https://cdn.jsdelivr.net/npm/dompurify@3.2.6/dist/purify.min.js"></script>
-    <link rel="stylesheet" href="/style.css?v=checkpoint-shell-17" />
+    <link rel="stylesheet" href="/style.css?v=checkpoint-shell-19" />
   </head>
   <body class="min-h-screen bg-slate-950 text-slate-100">
     <div class="mx-auto max-w-[1600px] px-4 py-5 lg:px-6">
@@ -84,7 +84,20 @@
                 Configure the active checkpoint to populate this workspace.
               </div>
             </div>
-            <form id="controls-form" class="space-y-3"></form>
+            <div class="workspace-setup-grid">
+              <form id="controls-form" class="space-y-3"></form>
+              <aside id="setup-preview-shell" class="setup-preview-shell">
+                <div class="setup-preview-header">
+                  <div>
+                    <p class="setup-preview-kicker">Live Setup Preview</p>
+                    <h3 id="setup-preview-title" class="setup-preview-title">Preview</h3>
+                    <p id="setup-preview-summary" class="setup-preview-summary">Waiting for setup data</p>
+                  </div>
+                  <div id="setup-preview-tabs" class="setup-preview-tabs" aria-label="Setup preview view"></div>
+                </div>
+                <div id="setup-preview-plot" class="setup-preview-plot"></div>
+              </aside>
+            </div>
           </section>
 
           <section class="grid gap-5 xl:grid-cols-2">
@@ -143,6 +156,6 @@
       </main>
     </div>
 
-    <script type="module" src="/app.js?v=checkpoint-shell-17"></script>
+    <script type="module" src="/app.js?v=checkpoint-shell-20"></script>
   </body>
 </html>

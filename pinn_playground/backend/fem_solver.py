@@ -19,6 +19,7 @@ from pinn_playground.backend.fem_geometry import (
     serialize_mesh_payload,
     top_load_facets,
 )
+from pinn_playground.backend.payload_serialization import deformation_visual_scale
 from pinn_playground.backend.problem_definition import (
     FEMMeshConfig,
     FEMProblemConfig,
@@ -173,12 +174,7 @@ def _stress_grid(mesh, element_vm: np.ndarray, config: FEMProblemConfig, *, grid
 
 
 def _deformed_mesh_payload(mesh, ux: np.ndarray, uy: np.ndarray) -> tuple[dict[str, Any], float]:
-    max_disp = float(np.max(np.sqrt(ux**2 + uy**2)))
-    if max_disp <= 1e-18:
-        scale = 1.0
-    else:
-        scale = min(max(0.12 / max_disp, 1.0), 2.5e6)
-
+    scale = deformation_visual_scale(ux, uy)
     deformed_x = mesh.p[0] + scale * ux
     deformed_y = mesh.p[1] + scale * uy
 

@@ -251,15 +251,28 @@ def _select_lesson_excerpts(request: TutorChatRequest) -> list[dict[str, Any]]:
     return [excerpt for _, excerpt in scored[:4]]
 
 
-def _summarize_state(state: TutorAppState) -> str:
+def _clip_text(value: Any, limit: int) -> str:
+    """Collapse whitespace and cap long prompt fields without dropping them."""
+    text = " ".join(str(value).split())
+    if len(text) <= limit:
+        return text
+    return text[: limit - 3].rstrip() + "..."
+
+
+def _summarize_state(
+    state: TutorAppState,
+    *,
+    include_control_options: bool = True,
+    max_page_text_chars: int = 480,
+) -> str:
     """Render a compact text snapshot of the live application state."""
     lines: list[str] = []
     lines.append(f"active_cell: {state.activeCellId or 'unknown'}")
     lines.append(f"active_checkpoint: {state.activeCheckpointId or 'unknown'}")
     if state.checkpointTitle:
-        lines.append(f"checkpoint_title: {state.checkpointTitle}")
+        lines.append(f"checkpoint_title: {_clip_text(state.checkpointTitle, 120)}")
     if state.checkpointSubtitle:
-        lines.append(f"checkpoint_goal: {state.checkpointSubtitle}")
+        lines.append(f"checkpoint_goal: {_clip_text(state.checkpointSubtitle, 240)}")
     if state.visiblePage:
         lines.append("visible_page:")
         for key in (
@@ -275,16 +288,19 @@ def _summarize_state(state: TutorAppState) -> str:
         ):
             value = state.visiblePage.get(key)
             if value is not None and value != "":
-                lines.append(f"  {key}: {value}")
+                limit = max_page_text_chars if key in {"introText", "bodyText"} else 120
+                lines.append(f"  {key}: {_clip_text(value, limit)}")
     if state.activeBottomTab:
         lines.append(f"active_bottom_tab: {state.activeBottomTab}")
     if state.activeTask:
         task_title = state.activeTask.get("title") or state.activeTask.get("id")
         task_question = state.activeTask.get("question")
         task_status = state.activeTask.get("status")
-        lines.append(f"active_task: {task_title} ({task_status or 'unknown'})")
+        lines.append(
+            f"active_task: {_clip_text(task_title or 'unknown', 120)} ({task_status or 'unknown'})"
+        )
         if task_question:
-            lines.append(f"active_task_question: {task_question}")
+            lines.append(f"active_task_question: {_clip_text(task_question, 240)}")
     if state.checkpointRequirements:
         lines.append("checkpoint_requirements:")
         for requirement in state.checkpointRequirements[:6]:
@@ -297,7 +313,7 @@ def _summarize_state(state: TutorAppState) -> str:
         lines.append("controls:")
         for key, value in sorted(state.controls.items()):
             lines.append(f"  {key}: {value}")
-    if state.controlOptions:
+    if include_control_options and state.controlOptions:
         lines.append("available_control_options:")
         for key, options in sorted(state.controlOptions.items()):
             if not options:
@@ -319,7 +335,7 @@ def _summarize_state(state: TutorAppState) -> str:
     if state.notes:
         lines.append("notes:")
         for note in state.notes[:6]:
-            lines.append(f"  - {note}")
+            lines.append(f"  - {_clip_text(note, 180)}")
     return "\n".join(lines)
 
 
@@ -465,10 +481,14 @@ def _build_messages(
     presets: list[dict[str, Any]],
     lesson_excerpts: list[dict[str, Any]],
 ) -> list[dict[str, str]]:
-    state_block = _summarize_state(request.appState)
+    state_block = _summarize_state(
+        request.appState,
+        include_control_options=request.mode == "agent",
+        max_page_text_chars=640 if request.mode == "ask" else 420,
+    )
     preset_block = _summarize_presets(presets)
     lesson_block = _summarize_lessons(lesson_excerpts)
-    history_block = _render_history(request.history)
+    history_block = _render_history(request.history, keep_last=4 if request.mode == "ask" else 6)
 
     think_directive = "/think" if request.thinkMode else "/no_think"
     user_block = (
@@ -488,7 +508,7 @@ def _build_messages(
 
 
 # ---------------------------------------------------------------------------
-# Local LLM client (OpenAI-compatible chat completions)
+# Local LLM client
 # ---------------------------------------------------------------------------
 
 
@@ -522,10 +542,15 @@ def _autodetect_qwen_model() -> str | None:
 
 
 def _llm_endpoint() -> str:
-    base = _env("TUTOR_API_BASE", _DEFAULT_OPENAI_BASE) or _DEFAULT_OPENAI_BASE
-    base = base.rstrip("/")
-    if base.endswith("/chat/completions"):
+    configured = _env("TUTOR_API_BASE")
+    if not configured:
+        return f"{_DEFAULT_OLLAMA_BASE}/api/chat"
+
+    base = configured.rstrip("/")
+    if base.endswith("/api/chat") or base.endswith("/chat/completions"):
         return base
+    if base.startswith(_DEFAULT_OLLAMA_BASE) or base.startswith("http://127.0.0.1:11434"):
+        return base + "/api/chat"
     return base + "/chat/completions"
 
 
@@ -543,8 +568,20 @@ def _llm_timeout() -> float:
         return 120.0
 
 
-def _llm_call(messages: list[dict[str, str]]) -> str:
-    """Synchronous OpenAI-compatible chat completion against a local server.
+def _llm_keep_alive() -> str:
+    return _env("TUTOR_KEEP_ALIVE", "15m") or "15m"
+
+
+def _is_ollama_openai_endpoint(endpoint: str) -> bool:
+    return endpoint.startswith(_DEFAULT_OPENAI_BASE) or endpoint.startswith("http://127.0.0.1:11434/v1")
+
+
+def _is_ollama_native_endpoint(endpoint: str) -> bool:
+    return endpoint.startswith(f"{_DEFAULT_OLLAMA_BASE}/api/chat") or endpoint.startswith("http://127.0.0.1:11434/api/chat")
+
+
+def _llm_call(messages: list[dict[str, str]], *, think_mode: bool) -> str:
+    """Synchronous local LLM call against Ollama or another compatible server.
 
     Sync is intentional. This harness targets local single-user sessions on
     Ollama, vLLM, or llama.cpp server, where blocking the FastAPI worker for
@@ -554,13 +591,28 @@ def _llm_call(messages: list[dict[str, str]]) -> str:
     endpoint = _llm_endpoint()
     model = _llm_model()
 
-    payload = {
-        "model": model,
-        "messages": messages,
-        "temperature": 0.2,
-        "response_format": {"type": "json_object"},
-        "stream": False,
-    }
+    if _is_ollama_native_endpoint(endpoint):
+        payload = {
+            "model": model,
+            "messages": messages,
+            "format": "json",
+            "stream": False,
+            "think": "low" if think_mode else False,
+            "keep_alive": _llm_keep_alive(),
+            "options": {
+                "temperature": 0.2,
+            },
+        }
+    else:
+        payload = {
+            "model": model,
+            "messages": messages,
+            "temperature": 0.2,
+            "response_format": {"type": "json_object"},
+            "stream": False,
+        }
+        if _is_ollama_openai_endpoint(endpoint):
+            payload["reasoning_effort"] = "low" if think_mode else "none"
 
     headers = {"Content-Type": "application/json"}
     api_key = _env("TUTOR_API_KEY")
@@ -587,6 +639,8 @@ def _llm_call(messages: list[dict[str, str]]) -> str:
 
     try:
         envelope = json.loads(raw)
+        if _is_ollama_native_endpoint(endpoint):
+            return envelope["message"]["content"]
         return envelope["choices"][0]["message"]["content"]
     except (json.JSONDecodeError, KeyError, IndexError) as exc:
         raise TutorBackendError(
@@ -859,7 +913,7 @@ def run_tutor_chat(request: TutorChatRequest) -> TutorChatResponse:
     messages = _build_messages(request, presets, lesson_excerpts)
 
     try:
-        raw_text = _llm_call(messages)
+        raw_text = _llm_call(messages, think_mode=request.thinkMode)
     except TutorBackendError as exc:
         return TutorChatResponse(
             message=f"Tutor backend error: {exc}",
@@ -883,7 +937,7 @@ def run_tutor_chat(request: TutorChatRequest) -> TutorChatResponse:
             },
         ]
         try:
-            raw_text = _llm_call(retry_messages)
+            raw_text = _llm_call(retry_messages, think_mode=request.thinkMode)
         except TutorBackendError as exc:
             return TutorChatResponse(
                 message=f"Tutor backend error during retry: {exc}",

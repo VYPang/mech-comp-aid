@@ -157,6 +157,157 @@ export function renderErrorHeatmap(containerId, grid, colorRange = null) {
   );
 }
 
+export function buildDisplacementErrorGrid(referenceGrid, candidateGrid) {
+  const referenceX = referenceGrid?.x;
+  const referenceY = referenceGrid?.y;
+  const referenceU = referenceGrid?.u;
+  const referenceV = referenceGrid?.v;
+  const candidateU = candidateGrid?.u;
+  const candidateV = candidateGrid?.v;
+
+  if (
+    !Array.isArray(referenceX)
+    || !Array.isArray(referenceY)
+    || !Array.isArray(referenceU)
+    || !Array.isArray(referenceV)
+    || !Array.isArray(candidateU)
+    || !Array.isArray(candidateV)
+    || referenceU.length !== candidateU.length
+    || referenceV.length !== candidateV.length
+  ) {
+    return null;
+  }
+
+  const z = referenceU.map((uRow, rowIndex) => {
+    const vRow = referenceV[rowIndex];
+    const candidateURow = candidateU[rowIndex];
+    const candidateVRow = candidateV[rowIndex];
+    if (
+      !Array.isArray(uRow)
+      || !Array.isArray(vRow)
+      || !Array.isArray(candidateURow)
+      || !Array.isArray(candidateVRow)
+      || uRow.length !== candidateURow.length
+      || vRow.length !== candidateVRow.length
+    ) {
+      return null;
+    }
+
+    return uRow.map((uValue, colIndex) => {
+      const vValue = vRow[colIndex];
+      const candidateUValue = candidateURow[colIndex];
+      const candidateVValue = candidateVRow[colIndex];
+      if (
+        !Number.isFinite(uValue)
+        || !Number.isFinite(vValue)
+        || !Number.isFinite(candidateUValue)
+        || !Number.isFinite(candidateVValue)
+      ) {
+        return null;
+      }
+      const du = candidateUValue - uValue;
+      const dv = candidateVValue - vValue;
+      return Math.sqrt(du * du + dv * dv);
+    });
+  });
+
+  if (z.some((row) => row === null)) {
+    return null;
+  }
+
+  return {
+    x: referenceX,
+    y: referenceY,
+    z,
+  };
+}
+
+export function renderDisplacementErrorHeatmap(containerId, referenceGrid, candidateGrid) {
+  const errorGrid = buildDisplacementErrorGrid(referenceGrid, candidateGrid);
+  if (!errorGrid) {
+    renderNotePlot(containerId, "Absolute Displacement Error", [
+      "Displacement error needs matching FEM and PINN grids.",
+    ]);
+    return;
+  }
+
+  Plotly.react(
+    containerId,
+    [
+      {
+        z: errorGrid.z,
+        x: errorGrid.x,
+        y: errorGrid.y,
+        type: "heatmap",
+        colorscale: "Reds",
+        colorbar: { title: "Abs. Disp. Error" },
+      },
+    ],
+    {
+      ...plotLayoutBase,
+      xaxis: { title: "x", gridcolor: "rgba(148, 163, 184, 0.15)" },
+      yaxis: {
+        title: "y",
+        scaleanchor: "x",
+        scaleratio: 1,
+        gridcolor: "rgba(148, 163, 184, 0.15)",
+      },
+    },
+    { responsive: true },
+  );
+}
+
+export function renderDeformationGridPlot(containerId, grid) {
+  const visualScale = Number.isFinite(grid?.scale) && grid.scale > 0 ? grid.scale : 1;
+  const segments = displacementGridSegments(grid, visualScale);
+  const traces = [
+    {
+      z: grid.magnitude,
+      x: grid.x,
+      y: grid.y,
+      type: "heatmap",
+      colorscale: "Blues",
+      showscale: true,
+      colorbar: { title: "|u|" },
+      opacity: 0.42,
+      hoverinfo: "skip",
+    },
+    {
+      x: segments.base.x,
+      y: segments.base.y,
+      type: "scattergl",
+      mode: "lines",
+      name: "Undeformed grid",
+      line: { color: "#334155", width: 1 },
+    },
+    {
+      x: segments.deformed.x,
+      y: segments.deformed.y,
+      type: "scattergl",
+      mode: "lines",
+      name: visualScale === 1 ? "Deformed" : "Deformed (scaled)",
+      line: { color: "#22d3ee", width: 2 },
+    },
+  ];
+
+  Plotly.react(
+    containerId,
+    traces,
+    {
+      ...plotLayoutBase,
+      xaxis: { title: "x", gridcolor: "rgba(148, 163, 184, 0.15)" },
+      yaxis: {
+        title: "y",
+        scaleanchor: "x",
+        scaleratio: 1,
+        gridcolor: "rgba(148, 163, 184, 0.15)",
+      },
+      legend: { orientation: "h", y: 1.15 },
+    },
+    { responsive: true },
+  );
+}
+
 export function renderLossPlot(containerId, losses) {
   const traces = [
     {
@@ -328,6 +479,9 @@ export function renderFemBoundaryPlot(containerId, payload) {
 }
 
 export function renderFemDeformedPlot(containerId, payload) {
+  const visualScale = Number.isFinite(payload?.deformed_mesh?.scale) && payload.deformed_mesh.scale > 0
+    ? payload.deformed_mesh.scale
+    : 1;
   const undeformed = triangleSegments({
     points: payload.deformed_mesh.points,
     triangles: payload.deformed_mesh.triangles,
@@ -353,7 +507,7 @@ export function renderFemDeformedPlot(containerId, payload) {
         y: deformed.y,
         type: "scattergl",
         mode: "lines",
-        name: "Deformed (scaled)",
+        name: visualScale === 1 ? "Deformed" : "Deformed (scaled)",
         line: { color: "#22d3ee", width: 2 },
       },
     ],
@@ -432,4 +586,48 @@ function triangleSegments(mesh) {
   }
 
   return { x, y };
+}
+
+function displacementGridSegments(grid, scale) {
+  const base = { x: [], y: [] };
+  const deformed = { x: [], y: [] };
+  const xs = grid?.x ?? [];
+  const ys = grid?.y ?? [];
+  const uRows = grid?.u ?? [];
+  const vRows = grid?.v ?? [];
+  const rowCount = ys.length;
+  const colCount = xs.length;
+
+  const finiteNode = (row, col) => (
+    Number.isFinite(xs[col])
+    && Number.isFinite(ys[row])
+    && Number.isFinite(uRows[row]?.[col])
+    && Number.isFinite(vRows[row]?.[col])
+  );
+  const pushSegment = (r1, c1, r2, c2) => {
+    if (!finiteNode(r1, c1) || !finiteNode(r2, c2)) {
+      return;
+    }
+    const x1 = xs[c1];
+    const y1 = ys[r1];
+    const x2 = xs[c2];
+    const y2 = ys[r2];
+    base.x.push(x1, x2, null);
+    base.y.push(y1, y2, null);
+    deformed.x.push(x1 + scale * uRows[r1][c1], x2 + scale * uRows[r2][c2], null);
+    deformed.y.push(y1 + scale * vRows[r1][c1], y2 + scale * vRows[r2][c2], null);
+  };
+
+  for (let row = 0; row < rowCount; row += 1) {
+    for (let col = 0; col < colCount; col += 1) {
+      if (col + 1 < colCount) {
+        pushSegment(row, col, row, col + 1);
+      }
+      if (row + 1 < rowCount) {
+        pushSegment(row, col, row + 1, col);
+      }
+    }
+  }
+
+  return { base, deformed };
 }

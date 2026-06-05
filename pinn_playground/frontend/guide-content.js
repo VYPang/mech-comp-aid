@@ -25,7 +25,7 @@ export function buildNumericalGuideSections({ controls, latestSolve, currentChec
   }
   if (latestSolve && currentCheckpointId !== "numerical-preview") {
     notice.push(
-      `Latest solve: max von Mises ${formatNumber(latestSolve.summary.max_von_mises)}, deformation scale ${formatNumber(latestSolve.summary.deformation_scale)}.`,
+      `Latest solve: max von Mises ${formatNumber(latestSolve.summary.max_von_mises)}, max displacement ${formatNumber(latestSolve.summary.max_displacement)}.`,
     );
     why.push("Use this solved field as the numerical reference before trusting a PINN prediction.");
   }

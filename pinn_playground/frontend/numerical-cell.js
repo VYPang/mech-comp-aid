@@ -1,8 +1,9 @@
 import { fetchFemPreview, fetchFemSolve } from "./api.js?v=checkpoint-shell-15";
 import { buildFemConfig, DEFAULT_FEM_CONTROLS, mergeControlValues, mergeSharedStructuralValues, pickSharedStructuralValues, readFemControlValues } from "./control-config.js?v=checkpoint-shell-15";
-import { buildNumericalGuideSections } from "./guide-content.js?v=checkpoint-shell-15";
+import { buildNumericalGuideSections } from "./guide-content.js?v=checkpoint-shell-20";
 import { buildNumericalTaskChecks } from "./numerical-task-progress.js?v=checkpoint-shell-17";
-import { renderFemBoundaryPlot, renderFemDeformedPlot, renderFemMeshPlot, renderNotePlot, renderStressHeatmap } from "./plots.js?v=checkpoint-shell-15";
+import { renderFemBoundaryPlot, renderFemDeformedPlot, renderFemMeshPlot, renderNotePlot, renderStressHeatmap } from "./plots.js?v=checkpoint-shell-20";
+import { FEM_SETUP_PREVIEW_MODES, resolveSetupPreviewMode } from "./setup-preview-modes.js?v=checkpoint-shell-18";
 
 const NUMERICAL_CHECKPOINT_ID = "numerical-session";
 const TARGET_MESH_CELLS = 80;
@@ -17,6 +18,7 @@ export function createNumericalCell({ ui, runtimeState, shell }) {
     isPreviewing: false,
     isSolving: false,
     controls: null,
+    activeSetupPreviewMode: "mesh",
     taskState: createInitialTaskState(),
   };
 
@@ -56,6 +58,7 @@ export function createNumericalCell({ ui, runtimeState, shell }) {
   function enter(checkpoint) {
     state.currentCheckpointId = checkpoint.id;
     shell.setBottomPanelVisible(false);
+    shell.setSetupPreviewVisible(true);
     renderControls(checkpoint);
     updateNumericalTaskProgress();
     const currentConfig = getConfig();
@@ -197,6 +200,7 @@ export function createNumericalCell({ ui, runtimeState, shell }) {
         <div id="fem-summary-table"></div>
       </section>
     `;
+    renderSetupPreviewChrome();
 
     state.controls = {
       geometry: ui.controlsForm.querySelector("#fem-geometry"),
@@ -418,6 +422,7 @@ export function createNumericalCell({ ui, runtimeState, shell }) {
       };
       shell.refreshProgress();
       renderCurrentCheckpoint();
+      shell.scrollResultsIntoView();
       shell.setStatus("FEM solve complete", {
         tone: "success",
         detail: `Case ${payload.case_id} solved successfully. Review deformation, stress, and solve time.`,
@@ -454,7 +459,50 @@ export function createNumericalCell({ ui, runtimeState, shell }) {
   }
 
   function renderNumericalWorkspace() {
+    renderSetupPreview();
     renderSolveCheckpoint();
+  }
+
+  function renderSetupPreviewChrome() {
+    const mode = resolveSetupPreviewMode(FEM_SETUP_PREVIEW_MODES, state.activeSetupPreviewMode);
+    shell.setSetupPreviewMeta({
+      title: mode?.title ?? "Live Setup Preview",
+      summary: state.latestPreview
+        ? femSetupPreviewSummary(mode.id, state.latestPreview)
+        : mode?.idleSummary ?? "Waiting for setup data",
+    });
+    shell.setSetupPreviewTabs(FEM_SETUP_PREVIEW_MODES, mode?.id, (nextModeId) => {
+      state.activeSetupPreviewMode = resolveSetupPreviewMode(FEM_SETUP_PREVIEW_MODES, nextModeId)?.id ?? "mesh";
+      renderSetupPreview();
+    });
+  }
+
+  function renderSetupPreview() {
+    const mode = resolveSetupPreviewMode(FEM_SETUP_PREVIEW_MODES, state.activeSetupPreviewMode);
+    if (!mode) return;
+    shell.setSetupPreviewMeta({
+      title: mode.title,
+      summary: state.latestPreview
+        ? femSetupPreviewSummary(mode.id, state.latestPreview)
+        : mode.idleSummary,
+    });
+    shell.setSetupPreviewTabs(FEM_SETUP_PREVIEW_MODES, mode.id, (nextModeId) => {
+      state.activeSetupPreviewMode = resolveSetupPreviewMode(FEM_SETUP_PREVIEW_MODES, nextModeId)?.id ?? "mesh";
+      renderSetupPreview();
+    });
+
+    if (!state.latestPreview) {
+      renderNotePlot(ui.setupPreviewPlot, "Live setup preview", [
+        "The mesh and boundary placement update here as you change the controls.",
+      ]);
+      return;
+    }
+
+    if (mode.id === "boundary") {
+      renderFemBoundaryPlot(ui.setupPreviewPlot, state.latestPreview);
+      return;
+    }
+    renderFemMeshPlot(ui.setupPreviewPlot, state.latestPreview);
   }
 
   function renderPreviewCheckpoint() {
@@ -486,7 +534,6 @@ export function createNumericalCell({ ui, runtimeState, shell }) {
         ["Solve time",        `${state.latestSolve.summary.solve_time_ms.toFixed(3)} ms`],
         ["Max displacement",  formatNumber(state.latestSolve.summary.max_displacement)],
         ["Max von Mises",     formatNumber(state.latestSolve.summary.max_von_mises)],
-        ["Deformation scale", formatNumber(state.latestSolve.summary.deformation_scale)],
         ["Load facets",       String(state.latestSolve.summary.n_load_facets)],
         ["Max |σ_xx|",        formatNumber(state.latestSolve.summary.max_abs_sxx)],
         ["Max |σ_yy|",        formatNumber(state.latestSolve.summary.max_abs_syy)],
@@ -494,7 +541,7 @@ export function createNumericalCell({ ui, runtimeState, shell }) {
       ]);
       shell.setPlotMeta({
         leftTitle: "Deformed Mesh",
-        leftSummary: `Scale ${formatNumber(state.latestSolve.summary.deformation_scale)}`,
+        leftSummary: `Max |u| ${formatNumber(state.latestSolve.summary.max_displacement)}`,
         rightTitle: "Von Mises Stress",
         rightSummary: `Max ${formatNumber(state.latestSolve.summary.max_von_mises)}`,
       });
@@ -503,23 +550,22 @@ export function createNumericalCell({ ui, runtimeState, shell }) {
     }
 
     const solveIsStale = runtimeState.checkpointEvents[NUMERICAL_CHECKPOINT_ID]?.status === "stale";
-    if (state.latestPreview) {
-      renderFemMeshPlot(ui.leftPlot, state.latestPreview);
-      renderFemBoundaryPlot(ui.rightPlot, state.latestPreview);
-    } else {
-      renderNotePlot(ui.leftPlot, "Numerical preview", [
-        "Preview data will appear here before you run the solve.",
-      ]);
-      renderNotePlot(ui.rightPlot, "Boundary conditions", [
-        "The current support and load patch will appear here.",
-      ]);
-    }
+    renderNotePlot(ui.leftPlot, solveIsStale ? "Result needs rerun" : "FEM result", [
+      solveIsStale
+        ? "The setup has changed since the last solve."
+        : "Run the FEM solve to generate the deformed mesh.",
+    ]);
+    renderNotePlot(ui.rightPlot, solveIsStale ? "Stress map needs rerun" : "Stress result", [
+      solveIsStale
+        ? "Run again so stress matches the live setup preview."
+        : "Von Mises stress appears here after the solve.",
+    ]);
     _renderSummaryTable([]);
     shell.setPlotMeta({
-      leftTitle: "Current Mesh",
-      leftSummary: state.latestPreview ? `${state.latestPreview.mesh.counts.n_elements} elements` : "Preview not generated yet",
-      rightTitle: "Current Boundary Conditions",
-      rightSummary: solveIsStale ? "Preview changed since the last solve" : "Ready for solve",
+      leftTitle: "FEM Result",
+      leftSummary: solveIsStale ? "Run again after setup changes" : "Waiting for solve",
+      rightTitle: "Von Mises Stress",
+      rightSummary: solveIsStale ? "Stale result cleared" : "Waiting for solve",
     });
   }
 
@@ -537,7 +583,7 @@ export function createNumericalCell({ ui, runtimeState, shell }) {
       ]);
       shell.setPlotMeta({
         leftTitle: "Deformed Mesh",
-        leftSummary: `Scale ${formatNumber(state.latestSolve.summary.deformation_scale)}`,
+        leftSummary: `Max |u| ${formatNumber(state.latestSolve.summary.max_displacement)}`,
         rightTitle: "Von Mises Stress",
         rightSummary: `Mean ${formatNumber(state.latestSolve.summary.mean_von_mises)}`,
       });
@@ -626,4 +672,14 @@ function configsMatch(left, right) {
     return false;
   }
   return JSON.stringify(left) === JSON.stringify(right);
+}
+
+function femSetupPreviewSummary(modeId, payload) {
+  if (!payload) {
+    return "Waiting for setup data";
+  }
+  if (modeId === "boundary") {
+    return "Bottom support and top load patch";
+  }
+  return `${payload.mesh.counts.n_elements} elements`;
 }

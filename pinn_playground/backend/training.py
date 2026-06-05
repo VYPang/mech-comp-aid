@@ -13,6 +13,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from scipy.interpolate import griddata
 from starlette.websockets import WebSocket
 
+from pinn_playground.backend.payload_serialization import serialize_displacement_grid
 from pinn_playground.backend.physics_env import (
     MaterialProps,
     OUTER_HI,
@@ -233,12 +234,13 @@ async def stream_training_session(
         fem_baseline_z: np.ndarray | None = None
         fem_baseline_result = await asyncio.to_thread(_build_fem_baseline, config, config.stress_grid_n)
         if fem_baseline_result is not None:
-            fem_baseline_grid, fem_baseline_z = fem_baseline_result
+            fem_baseline_grid, fem_baseline_z, fem_displacement_grid = fem_baseline_result
             await websocket.send_json(
                 {
                     "type": "fem_baseline",
                     "physics_case_id": config.physics_case_id(),
                     "stress_grid": fem_baseline_grid,
+                    "displacement_grid": fem_displacement_grid,
                 }
             )
 
@@ -356,6 +358,13 @@ async def stream_training_session(
                     mat=physical_material,
                     device=device,
                 )
+                _, _, u_grid, v_grid = _pinn_displacement_grid(
+                    model,
+                    config.problem,
+                    grid_n=config.stress_grid_n,
+                    device=device,
+                )
+                displacement_scale = _physical_displacement_scale(config.problem)
                 error_grid: dict[str, Any] | None = None
                 if fem_baseline_z is not None:
                     error_z = np.abs(vm - fem_baseline_z).astype(np.float32)
@@ -371,6 +380,12 @@ async def stream_training_session(
                         "bc_loss": bc_value,
                         "teacher_loss": teacher_value,
                         "stress_grid": _serialize_grid(xg, yg, vm),
+                        "displacement_grid": serialize_displacement_grid(
+                            xg,
+                            yg,
+                            u_grid * displacement_scale,
+                            v_grid * displacement_scale,
+                        ),
                         "error_grid": error_grid,
                         "history_tail": _history_tail(total_history),
                     }
@@ -457,12 +472,13 @@ def _training_material(problem: StructuralProblemConfig) -> MaterialProps:
 def _build_fem_baseline(
     config: "TrainingConfig",
     grid_n: int,
-) -> "tuple[dict[str, Any], np.ndarray] | None":
+) -> "tuple[dict[str, Any], np.ndarray, dict[str, Any]] | None":
     """
     Run FEM at maximum mesh resolution using the same geometry/load as the PINN.
 
-    Returns (serialised grid dict, z_np float32 array) so the caller can both
-    forward-send the grid to the browser and compute element-wise errors.
+    Returns (serialised stress grid, z_np float32 array, serialised
+    displacement grid) so the caller can forward-send the baseline and compute
+    element-wise errors.
     Returns None on any exception so a FEM failure never kills the PINN run.
     """
     try:
@@ -481,11 +497,16 @@ def _build_fem_baseline(
             [[np.nan if v is None else float(v) for v in row] for row in grid["z"]],
             dtype=np.float32,
         )
+        displacement_grid = _fem_displacement_grid_from_result(
+            result,
+            config.problem,
+            grid_n=grid_n,
+        )
         # No rescaling needed: PINN display uses physical_material.young = traction_scale,
         # which maps training-level O(1) stresses back to the physical traction magnitude.
         # FEM solves with the same traction BCs, and in linear elasticity the stress
         # field is independent of E, so both outputs are already in the same units.
-        return grid, z_np
+        return grid, z_np, displacement_grid
     except Exception:
         return None
 
@@ -625,6 +646,72 @@ def _serialize_grid(x: np.ndarray, y: np.ndarray, z: np.ndarray) -> dict[str, An
     return {"x": x_axis, "y": y_axis, "z": z_rows}
 
 
+def _pinn_displacement_grid(
+    model: PINN,
+    geometry: StructuralProblemConfig,
+    *,
+    grid_n: int,
+    device: torch.device,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    model.eval()
+    xs = np.linspace(0.0, 1.0, grid_n, dtype=np.float32)
+    ys = np.linspace(0.0, 1.0, grid_n, dtype=np.float32)
+    grid_x, grid_y = np.meshgrid(xs, ys, indexing="xy")
+    mask = geometry_mask_np(grid_x, grid_y, geometry)
+    x_flat = torch.tensor(grid_x.reshape(-1, 1), dtype=torch.float32, device=device)
+    y_flat = torch.tensor(grid_y.reshape(-1, 1), dtype=torch.float32, device=device)
+    with torch.no_grad():
+        u, v = model(x_flat, y_flat)
+    u_np = u.detach().cpu().numpy().reshape(grid_n, grid_n).astype(np.float32)
+    v_np = v.detach().cpu().numpy().reshape(grid_n, grid_n).astype(np.float32)
+    u_np = np.where(mask, u_np, np.nan).astype(np.float32)
+    v_np = np.where(mask, v_np, np.nan).astype(np.float32)
+    return grid_x.astype(np.float32), grid_y.astype(np.float32), u_np, v_np
+
+
+def _fem_displacement_grid_from_result(
+    result: dict[str, Any],
+    problem: StructuralProblemConfig,
+    *,
+    grid_n: int,
+) -> dict[str, Any]:
+    deformed_mesh = result["deformed_mesh"]
+    nodes = np.stack(
+        [
+            np.asarray(deformed_mesh["points"]["x"], dtype=np.float64),
+            np.asarray(deformed_mesh["points"]["y"], dtype=np.float64),
+        ],
+        axis=1,
+    )
+    deformation_scale = float(deformed_mesh.get("scale", 1.0))
+    if not np.isfinite(deformation_scale) or deformation_scale <= 0.0:
+        deformation_scale = 1.0
+    ux_phys = (
+        np.asarray(deformed_mesh["deformed_points"]["x"], dtype=np.float64)
+        - np.asarray(deformed_mesh["points"]["x"], dtype=np.float64)
+    ) / deformation_scale
+    uy_phys = (
+        np.asarray(deformed_mesh["deformed_points"]["y"], dtype=np.float64)
+        - np.asarray(deformed_mesh["points"]["y"], dtype=np.float64)
+    ) / deformation_scale
+
+    xs = np.linspace(0.0, 1.0, grid_n, dtype=np.float32)
+    ys = np.linspace(0.0, 1.0, grid_n, dtype=np.float32)
+    grid_x, grid_y = np.meshgrid(xs, ys, indexing="xy")
+    target = np.stack([grid_x.reshape(-1), grid_y.reshape(-1)], axis=1)
+
+    ux_lin = griddata(nodes, ux_phys, target, method="linear")
+    uy_lin = griddata(nodes, uy_phys, target, method="linear")
+    ux_near = griddata(nodes, ux_phys, target, method="nearest")
+    uy_near = griddata(nodes, uy_phys, target, method="nearest")
+    ux = np.where(np.isfinite(ux_lin), ux_lin, ux_near).reshape(grid_n, grid_n)
+    uy = np.where(np.isfinite(uy_lin), uy_lin, uy_near).reshape(grid_n, grid_n)
+    mask = geometry_mask_np(grid_x, grid_y, problem)
+    ux = np.where(mask, ux, np.nan).astype(np.float32)
+    uy = np.where(mask, uy, np.nan).astype(np.float32)
+    return serialize_displacement_grid(grid_x, grid_y, ux, uy)
+
+
 # ---------------------------------------------------------------------------
 # Teacher-guided training helpers
 # ---------------------------------------------------------------------------
@@ -649,6 +736,11 @@ def _teacher_displacement_scale(problem: StructuralProblemConfig) -> float:
     )
     young_phys = float(problem.material.young)
     return young_phys / traction_scale
+
+
+def _physical_displacement_scale(problem: StructuralProblemConfig) -> float:
+    """Map PINN training displacement back to physical displacement units."""
+    return 1.0 / _teacher_displacement_scale(problem)
 
 
 def sample_teacher_points_xy(

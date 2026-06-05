@@ -13,6 +13,7 @@ export function createTutorialCell({ ui, runtimeState, shell }) {
   function enter(checkpoint) {
     syncRuntimeTutorialContext();
     shell.setBottomPanelVisible(false);
+    shell.setSetupPreviewVisible(false);
     hideStandardPlots(true);
     shell.setStatus("Reading the tutorial", {
       tone: "preview",
@@ -51,6 +52,7 @@ export function createTutorialCell({ ui, runtimeState, shell }) {
     if (runtimeState.tutorial) {
       runtimeState.tutorial.active = false;
     }
+    shell.setSetupPreviewVisible(true);
     hideStandardPlots(false);
   }
 

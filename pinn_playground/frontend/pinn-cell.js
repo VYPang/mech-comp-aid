@@ -1,7 +1,9 @@
 import { createPinnSocket, fetchPinnPreview, fetchTeacherPreview } from "./api.js?v=checkpoint-shell-15";
 import { buildPinnConfig, DEFAULT_PINN_CONTROLS, mergeControlValues, mergeSharedStructuralValues, pickSharedStructuralValues, readPinnControlValues } from "./control-config.js?v=checkpoint-shell-15";
-import { buildPinnGuideSections } from "./guide-content.js?v=checkpoint-shell-15";
-import { renderLossPlot, renderNotePlot, renderPointCloudPlot, renderStressHeatmap, renderErrorHeatmap } from "./plots.js?v=checkpoint-shell-15";
+import { buildPinnGuideSections } from "./guide-content.js?v=checkpoint-shell-20";
+import { renderDeformationGridPlot, renderDisplacementErrorHeatmap, renderLossPlot, renderNotePlot, renderPointCloudPlot, renderStressHeatmap, renderErrorHeatmap } from "./plots.js?v=checkpoint-shell-20";
+import { PINN_SETUP_PREVIEW_MODES, resolveSetupPreviewMode } from "./setup-preview-modes.js?v=checkpoint-shell-18";
+import { PINN_COMPARE_VIEWS, resolvePinnCompareView } from "./pinn-compare-views.js?v=checkpoint-shell-19";
 
 const PINN_SESSION_CHECKPOINT_ID = "pinn-session";
 
@@ -23,11 +25,14 @@ export function createPinnCell({ ui, runtimeState, shell }) {
     latestPreview: null,
     controls: null,
     femBaseline: null,
+    femBaselineDisplacement: null,
     activeBottomTab: "training-curve",
+    activeCompareView: "stress",
     teacherPoints: null,
     teacherPreviewTimer: null,
     teacherLocked: true,
     activeTrainingConfig: null,
+    activeSetupPreviewMode: "collocation",
     taskState: createInitialTaskState(),
   };
 
@@ -113,6 +118,7 @@ export function createPinnCell({ ui, runtimeState, shell }) {
     state.currentCheckpointId = checkpoint.id;
     state.teacherLocked = Boolean(checkpoint.teacherLocked) && !Boolean(runtimeState.pinn?.teacherUnlocked);
     runtimeState.pinn.activeBottomTab = state.activeBottomTab;
+    shell.setSetupPreviewVisible(true);
     renderControls(checkpoint);
     state.teacherPoints = null;
     updateTaskProgress();
@@ -145,6 +151,7 @@ export function createPinnCell({ ui, runtimeState, shell }) {
     state.latestPreview = null;
     state.latestMetrics = null;
     state.femBaseline = null;
+    state.femBaselineDisplacement = null;
     state.teacherPoints = null;
     state.teacherLocked = true;
     state.activeTrainingConfig = null;
@@ -439,6 +446,7 @@ export function createPinnCell({ ui, runtimeState, shell }) {
         </div>
       </section>
     `;
+    renderSetupPreviewChrome();
 
     state.controls = {
       geometry: ui.controlsForm.querySelector("#pinn-geometry"),
@@ -682,16 +690,55 @@ export function createPinnCell({ ui, runtimeState, shell }) {
     }
   }
 
+  function renderSetupPreviewChrome() {
+    const mode = resolveSetupPreviewMode(PINN_SETUP_PREVIEW_MODES, state.activeSetupPreviewMode);
+    shell.setSetupPreviewMeta({
+      title: mode?.title ?? "Live Setup Preview",
+      summary: state.latestPreview ? pinnSetupPreviewSummary(state.latestPreview) : mode?.idleSummary ?? "Waiting for setup data",
+    });
+    shell.setSetupPreviewTabs(PINN_SETUP_PREVIEW_MODES, mode?.id, (nextModeId) => {
+      state.activeSetupPreviewMode = resolveSetupPreviewMode(PINN_SETUP_PREVIEW_MODES, nextModeId)?.id ?? "collocation";
+      renderSetupPreview();
+    });
+  }
+
+  function renderSetupPreview() {
+    const mode = resolveSetupPreviewMode(PINN_SETUP_PREVIEW_MODES, state.activeSetupPreviewMode);
+    if (!mode) return;
+    shell.setSetupPreviewMeta({
+      title: mode.title,
+      summary: state.latestPreview ? pinnSetupPreviewSummary(state.latestPreview) : mode.idleSummary,
+    });
+    shell.setSetupPreviewTabs(PINN_SETUP_PREVIEW_MODES, mode.id, (nextModeId) => {
+      state.activeSetupPreviewMode = resolveSetupPreviewMode(PINN_SETUP_PREVIEW_MODES, nextModeId)?.id ?? "collocation";
+      renderSetupPreview();
+    });
+
+    if (!state.latestPreview) {
+      renderNotePlot(ui.setupPreviewPlot, "Live collocation preview", [
+        "Geometry, load patch, and collocation counts update here as you change the controls.",
+      ]);
+      return;
+    }
+
+    const payloadForPlot =
+      state.teacherPoints && isTeacherUnlocked()
+        ? { ...state.latestPreview, teacher_points: state.teacherPoints }
+        : state.latestPreview;
+    renderPointCloudPlot(ui.setupPreviewPlot, payloadForPlot);
+  }
+
   function renderPinnViews() {
     const isTrainOrTeacher = state.currentCheckpointId === PINN_SESSION_CHECKPOINT_ID;
     const activeTab = state.activeBottomTab;
     const sharedCompareRange = activeTab === "compare-fem" ? getSharedCompareHeatmapRange() : null;
+    renderSetupPreview();
     if (state.latestPreview) {
       const payloadForPlot =
         state.teacherPoints && isTeacherUnlocked()
           ? { ...state.latestPreview, teacher_points: state.teacherPoints }
           : state.latestPreview;
-      renderPointCloudPlot(ui.leftPlot, payloadForPlot);
+      renderPointCloudPlot(ui.setupPreviewPlot, payloadForPlot);
       const teacherSummary =
         isTeacherUnlocked() && state.teacherPoints
           ? ` · teacher ${(state.teacherPoints.interior?.x?.length ?? 0)
@@ -722,13 +769,32 @@ export function createPinnCell({ ui, runtimeState, shell }) {
 
     if (isTrainOrTeacher) {
       if (state.latestMetrics?.stress_grid) {
-        renderStressHeatmap(ui.rightPlot, state.latestMetrics.stress_grid, sharedCompareRange);
+        renderStressHeatmap(ui.leftPlot, state.latestMetrics.stress_grid, sharedCompareRange);
       } else {
-        renderNotePlot(ui.rightPlot, "Von Mises stress", [
+        renderNotePlot(ui.leftPlot, "Von Mises stress", [
           "Start a training run to populate the live stress heatmap.",
         ]);
       }
+      if (state.latestMetrics?.displacement_grid) {
+        renderDeformationGridPlot(ui.rightPlot, state.latestMetrics.displacement_grid);
+      } else {
+        renderNotePlot(ui.rightPlot, "PINN deformation", [
+          "Start a training run to show the displacement-driven deformed shape.",
+        ]);
+      }
       _renderBottomTabs();
+      shell.setPlotMeta({
+        leftTitle: "PINN Stress Result",
+        leftSummary: state.latestMetrics
+          ? `Updated at epoch ${state.latestMetrics.epoch}`
+          : "Training not started yet",
+        rightTitle: "PINN Deformation Result",
+        rightSummary: state.latestMetrics?.displacement_grid
+          ? `Max |u| ${formatMetric(maxDisplacementMagnitude(state.latestMetrics.displacement_grid))}`
+          : "Waiting for displacement",
+        bottomTitle: activeTab === "compare-fem" ? "Compare with Numerical" : "Training Monitor",
+        bottomSummary: state.latestMetrics ? `Epoch ${state.latestMetrics.epoch}` : "Waiting for a training run",
+      });
       return;
     }
 
@@ -766,10 +832,24 @@ export function createPinnCell({ ui, runtimeState, shell }) {
         </div>
         <div id="pinn-tab-loss-plot" style="flex:1; min-height:0;"></div>
         <div id="pinn-tab-compare-content" style="
-          display:none; flex:1; min-height:0; flex-direction:row;
+          display:none; flex:1; min-height:0; flex-direction:column;
         ">
-          <div id="pinn-baseline-plot" style="flex:1; min-height:0; min-width:0;"></div>
-          <div id="pinn-error-plot"    style="flex:1; min-height:0; min-width:0;"></div>
+          <div id="pinn-compare-view-toggle" class="pinn-compare-view-toggle">
+            ${PINN_COMPARE_VIEWS.map((view) => `
+              <button
+                id="pinn-compare-view-${view.id}"
+                type="button"
+                class="pinn-compare-view-button"
+                data-pinn-compare-view="${view.id}"
+              >
+                ${view.label}
+              </button>
+            `).join("")}
+          </div>
+          <div id="pinn-compare-plot-row" style="flex:1; min-height:0; min-width:0; display:flex;">
+            <div id="pinn-baseline-plot" style="flex:1; min-height:0; min-width:0;"></div>
+            <div id="pinn-error-plot"    style="flex:1; min-height:0; min-width:0;"></div>
+          </div>
         </div>
       </div>`;
     document.getElementById("pinn-tab-btn-training-curve").addEventListener("click", () => {
@@ -784,6 +864,12 @@ export function createPinnCell({ ui, runtimeState, shell }) {
       }
       renderPinnViews();
     });
+    document.querySelectorAll("[data-pinn-compare-view]").forEach((button) => {
+      button.addEventListener("click", () => {
+        state.activeCompareView = resolvePinnCompareView(button.dataset.pinnCompareView).id;
+        renderPinnViews();
+      });
+    });
   }
 
   function _updateTabButtons() {
@@ -795,6 +881,9 @@ export function createPinnCell({ ui, runtimeState, shell }) {
     const idleStyle   = baseStyle + "background:transparent; color:#94a3b8;";
     btnLoss.setAttribute("style",    state.activeBottomTab === "training-curve" ? activeStyle : idleStyle);
     btnCompare.setAttribute("style", state.activeBottomTab === "compare-fem"    ? activeStyle : idleStyle);
+    document.querySelectorAll("[data-pinn-compare-view]").forEach((button) => {
+      button.classList.toggle("pinn-compare-view-button-active", button.dataset.pinnCompareView === state.activeCompareView);
+    });
   }
 
   function _renderBottomTabs() {
@@ -809,22 +898,45 @@ export function createPinnCell({ ui, runtimeState, shell }) {
     if (state.activeBottomTab === "compare-fem") {
       lossPane.style.display    = "none";
       comparePane.style.display = "flex";
-      // Left: FEM baseline
-      if (state.femBaseline) {
-        renderStressHeatmap("pinn-baseline-plot", state.femBaseline, sharedCompareRange);
+      const compareView = resolvePinnCompareView(state.activeCompareView);
+      state.activeCompareView = compareView.id;
+      _updateTabButtons();
+      if (compareView.id === "deformation") {
+        if (state.femBaselineDisplacement) {
+          renderDeformationGridPlot("pinn-baseline-plot", state.femBaselineDisplacement);
+        } else {
+          renderNotePlot("pinn-baseline-plot", "FEM Deformation", [
+            "Running FEM at highest resolution\u2026",
+            "The deformation baseline will appear shortly after training starts.",
+          ]);
+        }
+        if (state.femBaselineDisplacement && state.latestMetrics?.displacement_grid) {
+          renderDisplacementErrorHeatmap(
+            "pinn-error-plot",
+            state.femBaselineDisplacement,
+            state.latestMetrics.displacement_grid,
+          );
+        } else {
+          renderNotePlot("pinn-error-plot", "Absolute Displacement Error", [
+            "Error map appears once PINN deformation and FEM baseline are both available.",
+          ]);
+        }
       } else {
-        renderNotePlot("pinn-baseline-plot", "FEM Baseline", [
-          "Running FEM at highest resolution\u2026",
-          "The baseline will appear here shortly after training starts.",
-        ]);
-      }
-      // Right: absolute error (updates every update_every epochs)
-      if (state.latestMetrics?.error_grid) {
-        renderErrorHeatmap("pinn-error-plot", state.latestMetrics.error_grid, sharedCompareRange);
-      } else {
-        renderNotePlot("pinn-error-plot", "Absolute Error", [
-          "Error map appears here once PINN metrics and FEM baseline are both available.",
-        ]);
+        if (state.femBaseline) {
+          renderStressHeatmap("pinn-baseline-plot", state.femBaseline, sharedCompareRange);
+        } else {
+          renderNotePlot("pinn-baseline-plot", "FEM Stress", [
+            "Running FEM at highest resolution\u2026",
+            "The stress baseline will appear shortly after training starts.",
+          ]);
+        }
+        if (state.latestMetrics?.error_grid) {
+          renderErrorHeatmap("pinn-error-plot", state.latestMetrics.error_grid, sharedCompareRange);
+        } else {
+          renderNotePlot("pinn-error-plot", "Absolute Stress Error", [
+            "Error map appears once PINN metrics and FEM baseline are both available.",
+          ]);
+        }
       }
     } else {
       lossPane.style.display    = "flex";
@@ -870,6 +982,18 @@ export function createPinnCell({ ui, runtimeState, shell }) {
     return grid.z.flatMap((row) => (Array.isArray(row) ? row : []));
   }
 
+  function maxDisplacementMagnitude(grid) {
+    const values = collectDisplacementValues(grid).filter(Number.isFinite);
+    return values.length ? Math.max(...values) : 0;
+  }
+
+  function collectDisplacementValues(grid) {
+    if (!grid || !Array.isArray(grid.magnitude)) {
+      return [];
+    }
+    return grid.magnitude.flatMap((row) => (Array.isArray(row) ? row : []));
+  }
+
   function setTrainingState(isTraining) {
     state.isTraining = isTraining;
     if (state.controls?.startButton) {
@@ -893,7 +1017,9 @@ export function createPinnCell({ ui, runtimeState, shell }) {
     resetLosses();
     state.latestMetrics = null;
     state.femBaseline = null;
+    state.femBaselineDisplacement = null;
     renderPinnViews();
+    shell.scrollResultsIntoView();
     setTrainingState(true);
     shell.setStatus("Connecting to PINN training", {
       tone: "running",
@@ -934,7 +1060,9 @@ export function createPinnCell({ ui, runtimeState, shell }) {
       }
       if (message.type === "fem_baseline") {
         state.femBaseline = message.stress_grid;
+        state.femBaselineDisplacement = message.displacement_grid ?? null;
         runtimeState.pinn.femBaseline = message.stress_grid;
+        runtimeState.pinn.femBaselineDisplacement = message.displacement_grid ?? null;
         renderPinnViews();
         return;
       }
@@ -1166,4 +1294,11 @@ function formatMetric(value) {
     return value.toExponential(2);
   }
   return value.toFixed(3);
+}
+
+function pinnSetupPreviewSummary(payload) {
+  if (!payload?.counts) {
+    return "Waiting for point data";
+  }
+  return `${payload.counts.n_domain} domain, ${payload.counts.n_boundary} boundary`;
 }
