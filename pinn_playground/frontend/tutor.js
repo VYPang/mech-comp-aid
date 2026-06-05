@@ -180,9 +180,9 @@ export function createTutor({ ui, runtimeState, progressStore }) {
   }
 
   function injectLauncherButton(launcher, ui) {
-    // Place the launcher directly above the Task Panel so it reads as the
-    // next obvious action near the guided work area.
-    const taskPanelSection = ui.requirementsList?.closest("section")
+    const taskPanelSection = ui.learningPathPanel
+      ?? ui.utilityPanel
+      ?? ui.requirementsList?.closest("section")
       ?? ui.coachSubtitle?.closest("section")
       ?? document.querySelector("aside section");
     if (!taskPanelSection || !taskPanelSection.parentElement) {

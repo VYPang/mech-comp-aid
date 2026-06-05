@@ -194,7 +194,7 @@ export function createAppShell({ ui, progressStore }) {
       return;
     }
     renderLearningPath(state, checkpoint.id);
-    renderWorkspaceHeader(checkpoint, state);
+    renderWorkspaceChrome(checkpoint);
     renderCoachPanel(checkpoint, state);
     updateNextButton(checkpoint, state);
   }
@@ -283,29 +283,14 @@ export function createAppShell({ ui, progressStore }) {
     });
   }
 
-  function renderWorkspaceHeader(checkpoint, state) {
-    const checkpointState = state.checkpoints[checkpoint.id];
-    const group = progressStore.checkpointGroups.find((entry) =>
-      entry.checkpoints.some((c) => c.id === checkpoint.id));
-    const absoluteIndex = progressStore.orderedCheckpointIds.indexOf(checkpoint.id) + 1;
-    const groupIndex = group?.checkpoints.findIndex((entry) => entry.id === checkpoint.id) ?? 0;
-    ui.workspaceCellLabel.textContent = group?.title ?? "Learning Cell";
-    ui.workspaceTitle.textContent = checkpoint.title;
-    ui.workspaceSubtitle.textContent = checkpoint.subtitle;
-    ui.workspaceProgress.textContent = `Step ${absoluteIndex} of ${progressStore.orderedCheckpointIds.length} \u00b7 ${group?.title ?? "Learning Cell"} ${groupIndex + 1} of ${group?.checkpoints.length ?? 1}`;
+  function renderWorkspaceChrome(checkpoint) {
     ui.controlsTitle.textContent = checkpoint.controlsTitle;
     ui.controlsSubtitle.textContent = checkpoint.controlsSubtitle;
     ui.coachSubtitle.textContent = getCompletionMessage(checkpoint, runtimeState);
-
-    ui.workspaceBadge.textContent = checkpointState.completed ? "Completed" : "Active";
-    ui.workspaceBadge.className =
-      checkpointState.completed
-        ? "inline-flex items-center rounded-full border border-teal-500/40 bg-teal-500/10 px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em] text-teal-200"
-        : "inline-flex items-center rounded-full border border-cyan-500/40 bg-cyan-500/10 px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em] text-cyan-200";
   }
 
   function renderCoachPanel(checkpoint) {
-    const tasksBlock = ui.requirementsList?.parentElement;
+    const tasksBlock = ui.activeTaskPanel ?? ui.requirementsList?.parentElement;
     if (ui.guideBox) {
       ui.guideBox.style.display = checkpoint.cellId === "pinnTutorial" ? "" : "none";
     }
@@ -411,20 +396,24 @@ export function createAppShell({ ui, progressStore }) {
   }
 
   function renderTaskProgressCompact(summary, selectedTaskId) {
-    return summary.items
+    const dots = summary.items
       .map((item, index) => `
-        <button
-          type="button"
-          class="task-dot task-dot-${item.status} ${item.id === selectedTaskId ? "task-dot-selected" : ""}"
-          title="${escapeHtml(item.title)}"
-          data-task-progress-id="${escapeHtml(item.id)}"
-          ${item.selectable ? "" : "disabled"}
-        >
-          <span class="task-dot-index">${index + 1}</span>
-          <span class="task-dot-label">${escapeHtml(taskStatusLabel(item.status))}</span>
-        </button>
-      `)
+          <button
+            type="button"
+            class="task-dot task-dot-${item.status} ${item.id === selectedTaskId ? "task-dot-selected" : ""}"
+            title="${escapeHtml(item.title)}"
+            data-task-progress-id="${escapeHtml(item.id)}"
+            ${item.selectable ? "" : "disabled"}
+          >
+            <span class="task-dot-index">${index + 1}</span>
+            <span class="task-dot-label">${escapeHtml(taskStatusLabel(item.status))}</span>
+          </button>
+        `)
       .join("");
+    return `
+      <span class="task-progress-label">Tasks</span>
+      ${dots}
+    `;
   }
 
   function bindGuidedTaskActions(checkpoint, summary) {

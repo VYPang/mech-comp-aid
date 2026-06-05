@@ -1,6 +1,6 @@
 import { createProgressStore } from "./progress-state.js?v=checkpoint-shell-15";
-import { createAppShell } from "./shell.js?v=checkpoint-shell-20";
-import { createTutor } from "./tutor.js?v=checkpoint-shell-17";
+import { createAppShell } from "./shell.js?v=checkpoint-shell-23";
+import { createTutor } from "./tutor.js?v=checkpoint-shell-23";
 
 function bootstrap() {
   const ui = {
@@ -14,11 +14,6 @@ function bootstrap() {
     learningPathPanel: document.getElementById("learning-path-panel"),
     learningPathBody: document.getElementById("learning-path-body"),
     learningPathDescription: document.getElementById("learning-path-description"),
-    workspaceCellLabel: document.getElementById("workspace-cell-label"),
-    workspaceTitle: document.getElementById("workspace-title"),
-    workspaceSubtitle: document.getElementById("workspace-subtitle"),
-    workspaceProgress: document.getElementById("workspace-progress"),
-    workspaceBadge: document.getElementById("workspace-badge"),
     controlsTitle: document.getElementById("controls-title"),
     controlsSubtitle: document.getElementById("controls-subtitle"),
     controlsSummary: document.getElementById("controls-summary"),
@@ -27,6 +22,8 @@ function bootstrap() {
     setupPreviewSummary: document.getElementById("setup-preview-summary"),
     setupPreviewTabs: document.getElementById("setup-preview-tabs"),
     setupPreviewPlot: "setup-preview-plot",
+    activeTaskPanel: document.getElementById("active-task-panel"),
+    utilityPanel: document.getElementById("utility-panel"),
     coachSubtitle: document.getElementById("coach-subtitle"),
     requirementsList: document.getElementById("requirements-list"),
     guideBox: document.getElementById("guide-box"),
