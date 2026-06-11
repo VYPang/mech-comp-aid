@@ -74,7 +74,7 @@ function getTutorialCompletionMessage(checkpoint, runtimeState) {
     return "Start with section 1 to unlock the tutorial progressively.";
   }
   if (progress.allComplete) {
-    return "Tutorial complete. The PINN workspace is now unlocked.";
+    return "Tutorial complete. The next workspace is now unlocked.";
   }
   return `Tutorial section ${progress.currentIndex} of ${progress.sectionCount}: ${progress.currentTitle}.`;
 }

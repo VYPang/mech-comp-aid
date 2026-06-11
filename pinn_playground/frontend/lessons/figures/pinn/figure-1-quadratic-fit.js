@@ -8,7 +8,7 @@ import {
   makeMapper,
   setupCanvas,
   solve3,
-} from "../figure-base.js?v=checkpoint-shell-15";
+} from "../../figure-base.js?v=checkpoint-shell-15";
 
 export function createQuadraticFigure(container) {
   const { body, captionEl } = buildFigureShell(container, {

@@ -10,7 +10,7 @@ import {
   polyEval,
   polyFit,
   setupCanvas,
-} from "../figure-base.js?v=checkpoint-shell-15";
+} from "../../figure-base.js?v=checkpoint-shell-15";
 
 const TRUE_COEFFS = [0.2, 1.1, -0.45, 0.05]; // monotone-ish cubic
 

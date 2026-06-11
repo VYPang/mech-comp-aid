@@ -1410,6 +1410,169 @@ body {
   font-size: 0.85rem;
   line-height: 1.55;
 }
+.numerical-concept-figure {
+  border-color: rgba(125, 211, 252, 0.24);
+  background: linear-gradient(180deg, rgba(15, 23, 42, 0.94), rgba(8, 47, 73, 0.34));
+}
+.numerical-concept-figure .lesson-figure-grid {
+  grid-template-columns: minmax(0, 1.55fr) minmax(16rem, 0.9fr);
+  align-items: start;
+}
+.numerical-concept-figure .lesson-figure-controls {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0.75rem;
+  width: 100%;
+}
+.numerical-concept-figure .lesson-figure-top-controls {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.65rem;
+  width: 100%;
+  margin-bottom: 0.85rem;
+}
+.numerical-concept-figure .lesson-figure-top-controls .lesson-control {
+  min-width: 0;
+}
+.numerical-concept-figure .lesson-button {
+  width: 100%;
+}
+.numerical-concept-figure .lesson-control {
+  min-width: 0;
+}
+.numerical-concept-figure .lesson-control input[type="range"] {
+  width: 100%;
+}
+.numerical-concept-figure .lesson-figure-sidebar {
+  gap: 0.85rem;
+}
+@media (max-width: 900px) {
+  .numerical-concept-figure .lesson-figure-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .numerical-concept-figure .lesson-figure-top-controls {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+.numerical-figure-svg {
+  display: block;
+  width: 100%;
+  height: auto;
+  min-height: 11rem;
+}
+.numerical-figure-bg {
+  fill: rgba(2, 6, 23, 0.52);
+  stroke: rgba(71, 85, 105, 0.5);
+}
+.numerical-figure-reference {
+  fill: none;
+  stroke: rgba(148, 163, 184, 0.5);
+  stroke-dasharray: 5 5;
+}
+.numerical-figure-shape {
+  fill: rgba(34, 211, 238, 0.22);
+  stroke: rgb(125, 211, 252);
+  stroke-width: 2.4;
+}
+.numerical-figure-axis,
+.numerical-figure-mesh-line {
+  fill: none;
+  stroke: rgba(148, 163, 184, 0.28);
+  stroke-width: 1;
+}
+.numerical-figure-member,
+.numerical-figure-frame {
+  fill: rgba(15, 23, 42, 0.56);
+  stroke: rgb(148, 163, 184);
+  stroke-width: 2;
+}
+.numerical-figure-hole {
+  fill: rgb(2, 6, 23);
+  stroke: rgba(148, 163, 184, 0.75);
+  stroke-width: 1.6;
+}
+.numerical-figure-fixed {
+  fill: none;
+  stroke: rgb(56, 189, 248);
+  stroke-width: 5;
+}
+.numerical-figure-ground {
+  fill: none;
+  stroke: rgba(148, 163, 184, 0.82);
+  stroke-width: 2;
+  stroke-linecap: round;
+}
+.numerical-figure-load {
+  fill: none;
+  stroke: rgb(251, 113, 133);
+  stroke-width: 4;
+  stroke-linecap: round;
+}
+.numerical-figure-loaded-edge {
+  fill: none;
+  stroke: rgb(251, 113, 133);
+  stroke-width: 6;
+  stroke-linecap: round;
+}
+.numerical-figure-brace,
+.numerical-figure-deformed {
+  fill: none;
+  stroke: rgb(250, 204, 21);
+  stroke-width: 3;
+  stroke-linecap: round;
+}
+.numerical-figure-curve,
+.numerical-figure-polyline {
+  fill: none;
+  stroke: rgb(125, 211, 252);
+  stroke-width: 2.6;
+}
+.numerical-figure-polyline {
+  stroke: rgb(250, 204, 21);
+}
+.numerical-figure-tangent {
+  fill: none;
+  stroke: rgb(251, 146, 60);
+  stroke-width: 2;
+  stroke-dasharray: 6 5;
+}
+.numerical-figure-quadratic {
+  fill: none;
+  stroke: rgb(52, 211, 153);
+  stroke-width: 2;
+}
+.numerical-figure-shape-function {
+  fill: none;
+  stroke: rgba(148, 163, 184, 0.48);
+  stroke-width: 1.8;
+  stroke-dasharray: 4 5;
+}
+.numerical-figure-error {
+  fill: none;
+  stroke: rgb(251, 113, 133);
+  stroke-width: 3;
+}
+.numerical-figure-point,
+.numerical-figure-point-alt {
+  fill: rgb(250, 204, 21);
+  stroke: rgb(15, 23, 42);
+  stroke-width: 2;
+}
+.numerical-figure-point-alt {
+  fill: rgb(251, 113, 133);
+}
+.numerical-figure-residual,
+.numerical-figure-residual-area {
+  fill: rgba(251, 113, 133, 0.34);
+}
+.numerical-figure-label {
+  fill: rgba(203, 213, 225, 0.9);
+  font-family: Inter, "Segoe UI", sans-serif;
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.01em;
+}
 .lesson-coach ul { margin: 0; padding-left: 1.1rem; line-height: 1.6; }
 
 /* ------------------------------------------------------------------ */

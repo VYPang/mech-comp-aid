@@ -11,7 +11,7 @@ import {
   polyEval,
   polyFit,
   setupCanvas,
-} from "../figure-base.js?v=checkpoint-shell-15";
+} from "../../figure-base.js?v=checkpoint-shell-15";
 
 const TRUE_COEFFS = [0.4, -0.6, -0.2, 0.18]; // y = 0.4 - 0.6 x - 0.2 x^2 + 0.18 x^3
 

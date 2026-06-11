@@ -113,6 +113,7 @@ export function createAppShell({ ui, progressStore }) {
   };
 
   const cells = {
+    numericalTutorial: createTutorialCell({ ui, runtimeState, shell: shellHelpers }),
     numerical: createNumericalCell({ ui, runtimeState, shell: shellHelpers }),
     pinn: createPinnCell({ ui, runtimeState, shell: shellHelpers }),
     pinnTutorial: createTutorialCell({ ui, runtimeState, shell: shellHelpers }),
@@ -291,10 +292,10 @@ export function createAppShell({ ui, progressStore }) {
   function renderCoachPanel(checkpoint) {
     const tasksBlock = ui.activeTaskPanel ?? ui.requirementsList?.parentElement;
     if (tasksBlock) {
-      tasksBlock.style.display = checkpoint.cellId === "pinnTutorial" ? "none" : "";
+      tasksBlock.style.display = isTutorialCell(checkpoint.cellId) ? "none" : "";
     }
 
-    if (checkpoint.cellId === "pinnTutorial") {
+    if (isTutorialCell(checkpoint.cellId)) {
       return;
     }
 
@@ -514,6 +515,10 @@ export function createAppShell({ ui, progressStore }) {
     }
     progressStore.markCheckpointComplete(checkpoint.id, { activateNext: false });
   }
+}
+
+function isTutorialCell(cellId) {
+  return cellId === "pinnTutorial" || cellId === "numericalTutorial";
 }
 
 function taskStatusLabel(status) {

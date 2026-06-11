@@ -4,8 +4,23 @@ export const checkpointGroups = [
   {
     id: "numerical",
     title: "Finite Element Method Cell",
-    description: "Work through one guided FEM session, then carry that baseline into the PINN.",
+    description: "Read the numerical tutorial first, then work through one guided FEM session and carry that baseline into the PINN.",
     checkpoints: [
+      {
+        id: "numerical-tutorial",
+        cellId: "numericalTutorial",
+        title: "Numerical Methods Tutorial",
+        subtitle: "From analytical mechanics to numerical approximation, residuals, mesh convergence, and FEM workspace setup.",
+        controlsTitle: "Tutorial Sections",
+        controlsSubtitle: "Open each section in order before starting the FEM workspace.",
+        tasks: [],
+        requirements: [
+          "Read each numerical tutorial section.",
+          "Try the interactive figure controls.",
+          "Advance through the eight sections in order.",
+        ],
+        completeMode: "tutorial_sequence",
+      },
       {
         id: "numerical-session",
         cellId: "numerical",

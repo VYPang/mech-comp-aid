@@ -6,7 +6,7 @@ import {
   buildFigureShell,
   makeFrameScheduler,
   setupCanvas,
-} from "../figure-base.js?v=checkpoint-shell-15";
+} from "../../figure-base.js?v=checkpoint-shell-15";
 
 const INNER_LO = 0.18;
 const INNER_HI = 0.82;

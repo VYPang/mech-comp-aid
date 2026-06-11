@@ -25,7 +25,7 @@ test("tutorial sequence advances when the last section has been viewed", () => {
   };
 
   assert.equal(canAdvanceCheckpoint(checkpoint, progressState, runtimeState), true);
-  assert.match(getCompletionMessage(checkpoint, runtimeState), /PINN workspace is now unlocked/);
+  assert.match(getCompletionMessage(checkpoint, runtimeState), /next workspace is now unlocked/);
 });
 
 test("tutorial sequence reports the current section while still in progress", () => {

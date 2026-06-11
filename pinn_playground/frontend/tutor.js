@@ -265,7 +265,7 @@ export function createTutor({ ui, runtimeState, progressStore }) {
     const checkpoint = progressStore.getActiveCheckpoint?.();
     const activeCellId = checkpoint?.cellId ?? "unknown";
     const cellLabel = cellLabelFor(activeCellId);
-    const checkpointTitle = activeCellId === "pinnTutorial" && runtimeState.tutorial?.activeSectionTitle
+    const checkpointTitle = isTutorialCell(activeCellId) && runtimeState.tutorial?.activeSectionTitle
       ? runtimeState.tutorial.activeSectionTitle
       : checkpoint?.title ?? "No checkpoint";
     dom.contextLabel.textContent = `${cellLabel} · ${checkpointTitle}`;
@@ -307,6 +307,7 @@ export function createTutor({ ui, runtimeState, progressStore }) {
       case "pinn":
         return "Physics-Informed Neural Network Cell";
       case "pinnTutorial":
+      case "numericalTutorial":
         return "Tutorial Cell";
       default:
         return "Workspace";
@@ -620,10 +621,10 @@ export function createTutor({ ui, runtimeState, progressStore }) {
     const visiblePage = summarizeVisiblePage(activeCellId, checkpoint);
 
     const notes = [];
-    if (activeCellId !== "pinnTutorial" && femRuntime.savedControls) {
+    if (!isTutorialCell(activeCellId) && femRuntime.savedControls) {
       notes.push("FEM cell has saved control values.");
     }
-    if (activeCellId !== "pinnTutorial" && pinnRuntime.latestPreview?.counts) {
+    if (!isTutorialCell(activeCellId) && pinnRuntime.latestPreview?.counts) {
       const c = pinnRuntime.latestPreview.counts;
       notes.push(`Last PINN preview: n_domain=${c.n_domain}, n_boundary=${c.n_boundary}.`);
     }
@@ -649,7 +650,7 @@ export function createTutor({ ui, runtimeState, progressStore }) {
   }
 
   function summarizeVisiblePage(activeCellId, checkpoint) {
-    if (activeCellId === "pinnTutorial" && runtimeState.tutorial?.active) {
+    if (isTutorialCell(activeCellId) && runtimeState.tutorial?.active) {
       const tutorial = runtimeState.tutorial;
       return {
         kind: "tutorial",
@@ -667,6 +668,10 @@ export function createTutor({ ui, runtimeState, progressStore }) {
       title: checkpoint?.title ?? null,
       subtitle: checkpoint?.subtitle ?? null,
     };
+  }
+
+  function isTutorialCell(cellId) {
+    return cellId === "pinnTutorial" || cellId === "numericalTutorial";
   }
 
   function summarizeMetrics(metrics) {

@@ -1,6 +1,7 @@
 // Tutorial cell. Renders the PINN tutorial sections + their interactive
 // figures into the workspace, replacing the usual three-plot layout while
-// the user is on the pinn-tutorial checkpoint.
+// the user is on a tutorial checkpoint.
+import { NUMERICAL_TUTORIAL_INTRO, NUMERICAL_TUTORIAL_SECTIONS } from "./lessons/numerical-tutorial-content.js?v=checkpoint-shell-1";
 import { TUTORIAL_INTRO, TUTORIAL_SECTIONS } from "./lessons/tutorial-content.js?v=checkpoint-shell-15";
 
 export function advanceTutorialProgress({ sectionIds, sectionId, unlockedCount, viewedSectionIds }) {
@@ -21,8 +22,28 @@ export function advanceTutorialProgress({ sectionIds, sectionId, unlockedCount, 
   };
 }
 
+export function resolveTutorialLesson(checkpoint) {
+  if (checkpoint?.cellId === "numericalTutorial") {
+    return {
+      progressKey: checkpoint.id,
+      title: "Numerical Tutorial Notes",
+      intro: NUMERICAL_TUTORIAL_INTRO,
+      sections: NUMERICAL_TUTORIAL_SECTIONS,
+      statusDetail: "Sections unlock in order. Open each one to unlock the FEM workspace.",
+    };
+  }
+  return {
+    progressKey: checkpoint?.id ?? "pinn-tutorial",
+    title: "PINN Tutorial Notes",
+    intro: TUTORIAL_INTRO,
+    sections: TUTORIAL_SECTIONS,
+    statusDetail: "Sections unlock in order. Open each one to unlock the next and gain access to the PINN workspace.",
+  };
+}
+
 export function createTutorialCell({ ui, runtimeState, shell }) {
   const state = {
+    lesson: null,
     activeSectionId: TUTORIAL_SECTIONS[0].id,
     figureInstances: new Map(),
     container: null,
@@ -31,6 +52,10 @@ export function createTutorialCell({ ui, runtimeState, shell }) {
   };
 
   function enter(checkpoint) {
+    state.lesson = resolveTutorialLesson(checkpoint);
+    state.activeSectionId = state.lesson.sections[0].id;
+    state.unlockedCount = 1;
+    state.viewedSectionIds = new Set([state.lesson.sections[0].id]);
     ensureTutorialProgress();
     syncRuntimeTutorialContext();
     shell.setBottomPanelVisible(false);
@@ -39,7 +64,7 @@ export function createTutorialCell({ ui, runtimeState, shell }) {
     shell.setStatus("Reading the tutorial", {
       tone: "preview",
       pill: "Tutorial",
-      detail: "Sections unlock in order. Open each one to unlock the next and gain access to the PINN workspace.",
+      detail: state.lesson.statusDetail,
     });
     shell.setControlsSummary("Use the section tabs below to jump between tutorial sections.");
     shell.setPlotMeta({
@@ -86,7 +111,7 @@ export function createTutorialCell({ ui, runtimeState, shell }) {
   function renderControls() {
     ui.controlsForm.innerHTML = `
       <div class="lesson-section-tabs" data-role="tabs">
-        ${TUTORIAL_SECTIONS.map((section, index) => `
+        ${state.lesson.sections.map((section, index) => `
           <button
             type="button"
             class="lesson-section-tab"
@@ -116,7 +141,8 @@ export function createTutorialCell({ ui, runtimeState, shell }) {
 
   function renderTutorialBody() {
     destroyFigures();
-    const activeSection = TUTORIAL_SECTIONS.find((section) => section.id === state.activeSectionId) ?? TUTORIAL_SECTIONS[0];
+    const sections = state.lesson.sections;
+    const activeSection = sections.find((section) => section.id === state.activeSectionId) ?? sections[0];
     markSectionVisited(activeSection.id);
     syncRuntimeTutorialContext(activeSection);
     let container = state.container;
@@ -135,7 +161,7 @@ export function createTutorialCell({ ui, runtimeState, shell }) {
     }
 
     container.innerHTML = `
-      <div class="lesson-intro">${TUTORIAL_INTRO}</div>
+      <div class="lesson-intro">${state.lesson.intro}</div>
       <article id="tutorial-${activeSection.id}" class="lesson-section">
         <h3 class="lesson-section-title">${activeSection.title}</h3>
         <div class="lesson-section-body">${activeSection.body}</div>
@@ -161,25 +187,25 @@ export function createTutorialCell({ ui, runtimeState, shell }) {
 
   function syncRuntimeTutorialContext(section = null) {
     const activeSection = section
-      ?? TUTORIAL_SECTIONS.find((entry) => entry.id === state.activeSectionId)
-      ?? TUTORIAL_SECTIONS[0];
-    const sectionIndex = TUTORIAL_SECTIONS.findIndex((entry) => entry.id === activeSection.id);
+      ?? state.lesson.sections.find((entry) => entry.id === state.activeSectionId)
+      ?? state.lesson.sections[0];
+    const sectionIndex = state.lesson.sections.findIndex((entry) => entry.id === activeSection.id);
     runtimeState.tutorial = {
       active: true,
-      title: "PINN Tutorial Notes",
-      introText: htmlToPlainText(TUTORIAL_INTRO),
+      title: state.lesson.title,
+      introText: htmlToPlainText(state.lesson.intro),
       activeSectionId: activeSection.id,
       activeSectionTitle: activeSection.title,
       activeSectionText: htmlToPlainText(activeSection.body),
       activeSectionIndex: sectionIndex >= 0 ? sectionIndex + 1 : null,
-      sectionCount: TUTORIAL_SECTIONS.length,
+      sectionCount: state.lesson.sections.length,
     };
     runtimeState.tutorialProgress = runtimeState.tutorialProgress ?? {};
-    runtimeState.tutorialProgress["pinn-tutorial"] = {
-      allComplete: state.viewedSectionIds.size === TUTORIAL_SECTIONS.length,
+    runtimeState.tutorialProgress[state.lesson.progressKey] = {
+      allComplete: state.viewedSectionIds.size === state.lesson.sections.length,
       currentIndex: sectionIndex >= 0 ? sectionIndex + 1 : 1,
       currentTitle: activeSection.title,
-      sectionCount: TUTORIAL_SECTIONS.length,
+      sectionCount: state.lesson.sections.length,
       unlockedCount: state.unlockedCount,
       viewedSectionIds: [...state.viewedSectionIds],
       updatedAt: new Date().toISOString(),
@@ -189,20 +215,23 @@ export function createTutorialCell({ ui, runtimeState, shell }) {
   }
 
   function ensureTutorialProgress() {
-    const progress = runtimeState.tutorialProgress?.["pinn-tutorial"];
+    const progress = runtimeState.tutorialProgress?.[state.lesson.progressKey];
     if (!progress) {
       return;
     }
-    state.unlockedCount = Math.max(1, Math.min(TUTORIAL_SECTIONS.length, Number(progress.unlockedCount) || 1));
-    state.viewedSectionIds = new Set(progress.viewedSectionIds ?? [TUTORIAL_SECTIONS[0].id]);
+    state.unlockedCount = Math.max(1, Math.min(state.lesson.sections.length, Number(progress.unlockedCount) || 1));
+    state.viewedSectionIds = new Set(progress.viewedSectionIds ?? [state.lesson.sections[0].id]);
     if (!state.viewedSectionIds.size) {
-      state.viewedSectionIds.add(TUTORIAL_SECTIONS[0].id);
+      state.viewedSectionIds.add(state.lesson.sections[0].id);
+    }
+    if (!state.viewedSectionIds.has(state.activeSectionId)) {
+      state.activeSectionId = state.lesson.sections[Math.max(0, state.unlockedCount - 1)]?.id ?? state.lesson.sections[0].id;
     }
   }
 
   function markSectionVisited(sectionId) {
     const next = advanceTutorialProgress({
-      sectionIds: TUTORIAL_SECTIONS.map((entry) => entry.id),
+      sectionIds: state.lesson.sections.map((entry) => entry.id),
       sectionId,
       unlockedCount: state.unlockedCount,
       viewedSectionIds: [...state.viewedSectionIds],
