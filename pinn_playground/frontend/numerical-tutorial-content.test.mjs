@@ -50,3 +50,21 @@ test("chapter 1 uses the rewritten solid-mechanics refresher and axial bar figur
     ["load", "area", "young"],
   );
 });
+
+test("chapter 2 introduces a field-equilibrium interactive figure", () => {
+  const chapter = NUMERICAL_TUTORIAL_SECTIONS[1];
+  const figure = getNumericalFigureConfig("analytical");
+
+  assert.match(chapter.body, /unknown is no longer just one number/i);
+  assert.match(chapter.body, /displacement field/i);
+  assert.match(chapter.body, /move the probe around the square/i);
+  assert.match(chapter.body, /Taylor series/i);
+  assert.match(chapter.body, /∂σ\/∂x \+ ∂σ\/∂y = 0/);
+
+  assert.equal(figure.title, "A Field Must Balance Locally");
+  assert.equal(figure.headline, "Figure 2 - A Field Must Balance Locally");
+  assert.deepEqual(
+    figure.controls.map((control) => control.id),
+    ["pattern", "amplitude", "arrows"],
+  );
+});
